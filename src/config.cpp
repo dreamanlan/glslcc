@@ -6,6 +6,8 @@
 #include "config.h"
 #include <sstream>
 
+//values copy from: 3rdparty\glslang\glslang\ResourceLimits\ResourceLimits.cpp
+
 const TBuiltInResource k_default_conf = {
 /* .MaxLights = */ 32,
 /* .MaxClipPlanes = */ 6,
@@ -101,6 +103,16 @@ const TBuiltInResource k_default_conf = {
 /* .maxTaskWorkGroupSizeZ_NV = */ 1,
 /* .maxMeshViewCountNV = */ 4,
 #endif
+/* .maxMeshOutputVerticesEXT = */ 256,
+/* .maxMeshOutputPrimitivesEXT = */ 256,
+/* .maxMeshWorkGroupSizeX_EXT = */ 128,
+/* .maxMeshWorkGroupSizeY_EXT = */ 128,
+/* .maxMeshWorkGroupSizeZ_EXT = */ 128,
+/* .maxTaskWorkGroupSizeX_EXT = */ 128,
+/* .maxTaskWorkGroupSizeY_EXT = */ 128,
+/* .maxTaskWorkGroupSizeZ_EXT = */ 128,
+/* .maxMeshViewCountEXT = */ 4,
+/* .maxDualSourceDrawBuffersEXT = */ 1,
 
 /* .limits = */ {
     /* .nonInductiveForLoops = */ 1,
@@ -212,6 +224,16 @@ std::string get_default_conf_str()
             << "MaxTaskWorkGroupSizeZ_NV "                  << conf.maxTaskWorkGroupSizeZ_NV << "\n"
             << "MaxMeshViewCountNV "                        << conf.maxMeshViewCountNV << "\n"
 #endif
+            << "MaxMeshOutputVerticesEXT "                  << conf.maxMeshOutputVerticesEXT << "\n"
+            << "MaxMeshOutputPrimitivesEXT "                << conf.maxMeshOutputPrimitivesEXT << "\n"
+            << "MaxMeshWorkGroupSizeX_EXT "                 << conf.maxMeshWorkGroupSizeX_EXT << "\n"
+            << "MaxMeshWorkGroupSizeY_EXT "                 << conf.maxMeshWorkGroupSizeY_EXT << "\n"
+            << "MaxMeshWorkGroupSizeZ_EXT "                 << conf.maxMeshWorkGroupSizeZ_EXT << "\n"
+            << "MaxTaskWorkGroupSizeX_EXT "                 << conf.maxTaskWorkGroupSizeX_EXT << "\n"
+            << "MaxTaskWorkGroupSizeY_EXT "                 << conf.maxTaskWorkGroupSizeY_EXT << "\n"
+            << "MaxTaskWorkGroupSizeZ_EXT "                 << conf.maxTaskWorkGroupSizeZ_EXT << "\n"
+            << "MaxMeshViewCountEXT "                       << conf.maxMeshViewCountEXT << "\n"
+            << "MaxDualSourceDrawBuffersEXT "               << conf.maxDualSourceDrawBuffersEXT << "\n"
             << "nonInductiveForLoops "                      << conf.limits.nonInductiveForLoops << "\n"
             << "whileLoops "                                << conf.limits.whileLoops << "\n"
             << "doWhileLoops "                              << conf.limits.doWhileLoops << "\n"
