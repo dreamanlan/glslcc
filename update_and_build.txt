@@ -1,0 +1,5 @@
+1、sync https://github.com/KhronosGroup/glslang and https://github.com/KhronosGroup/SPIRV-Cross with 3rdparty
+2、sync 3rdparty\glslang\glslang\ResourceLimits\ResourceLimits.cpp with src\config.cpp, only DefaultTBuiltInResource and GetDefaultTBuiltInResourceString
+3、run 3rdparty\glslang\update_glslang_sources.py
+4、run buildglslcc.bat
+5、open build\glslcc.sln，fix the error if it exists
