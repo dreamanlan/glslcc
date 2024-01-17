@@ -182,7 +182,7 @@ Id Builder::makeVoidType()
     return type->getResultId();
 }
 
-Id Builder::makeBoolType(bool const compilerGenerated)
+Id Builder::makeBoolType()
 {
     Instruction* type;
     if (groupedTypes[OpTypeBool].size() == 0) {
@@ -190,14 +190,15 @@ Id Builder::makeBoolType(bool const compilerGenerated)
         groupedTypes[OpTypeBool].push_back(type);
         constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
         module.mapInstruction(type);
+
+        if (emitNonSemanticShaderDebugInfo) {
+            auto const debugResultId = makeBoolDebugType(32);
+            debugId[type->getResultId()] = debugResultId;
+        }
+
     } else
         type = groupedTypes[OpTypeBool].back();
 
-    if (emitNonSemanticShaderDebugInfo && !compilerGenerated)
-    {
-        auto const debugResultId = makeBoolDebugType(32);
-        debugId[type->getResultId()] = debugResultId;
-    }
 
     return type->getResultId();
 }
@@ -240,6 +241,11 @@ Id Builder::makePointer(StorageClass storageClass, Id pointee)
     groupedTypes[OpTypePointer].push_back(type);
     constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
     module.mapInstruction(type);
+
+    if (emitNonSemanticShaderDebugInfo) {
+        const Id debugResultId = makePointerDebugType(storageClass, pointee);
+        debugId[type->getResultId()] = debugResultId;
+    }
 
     return type->getResultId();
 }
@@ -1069,6 +1075,34 @@ Id Builder::makeCompositeDebugType(std::vector<Id> const& memberTypes, char cons
     return type->getResultId();
 }
 
+Id Builder::makePointerDebugType(StorageClass storageClass, Id const baseType)
+{
+    const Id debugBaseType = debugId[baseType];
+    if (!debugBaseType) {
+        return makeDebugInfoNone();
+    }
+    const Id scID = makeUintConstant(storageClass);
+    for (Instruction* otherType : groupedDebugTypes[NonSemanticShaderDebugInfo100DebugTypePointer]) {
+        if (otherType->getIdOperand(2) == debugBaseType &&
+            otherType->getIdOperand(3) == scID) {
+            return otherType->getResultId();
+        }
+    }
+
+    Instruction* type = new Instruction(getUniqueId(), makeVoidType(), OpExtInst);
+    type->addIdOperand(nonSemanticShaderDebugInfo);
+    type->addImmediateOperand(NonSemanticShaderDebugInfo100DebugTypePointer);
+    type->addIdOperand(debugBaseType);
+    type->addIdOperand(scID);
+    type->addIdOperand(makeUintConstant(0));
+
+    groupedDebugTypes[NonSemanticShaderDebugInfo100DebugTypePointer].push_back(type);
+    constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
+    module.mapInstruction(type);
+
+    return type->getResultId();
+}
+
 Id Builder::makeDebugSource(const Id fileName) {
     if (debugSourceId.find(fileName) != debugSourceId.end())
         return debugSourceId[fileName];
@@ -1182,13 +1216,26 @@ Id Builder::makeDebugExpression()
     return debugExpression;
 }
 
-Id Builder::makeDebugDeclare(Id const debugLocalVariable, Id const localVariable)
+Id Builder::makeDebugDeclare(Id const debugLocalVariable, Id const pointer)
 {
     Instruction* inst = new Instruction(getUniqueId(), makeVoidType(), OpExtInst);
     inst->addIdOperand(nonSemanticShaderDebugInfo);
     inst->addImmediateOperand(NonSemanticShaderDebugInfo100DebugDeclare);
     inst->addIdOperand(debugLocalVariable); // debug local variable id
-    inst->addIdOperand(localVariable); // local variable id
+    inst->addIdOperand(pointer); // pointer to local variable id
+    inst->addIdOperand(makeDebugExpression()); // expression id
+    buildPoint->addInstruction(std::unique_ptr<Instruction>(inst));
+
+    return inst->getResultId();
+}
+
+Id Builder::makeDebugValue(Id const debugLocalVariable, Id const value)
+{
+    Instruction* inst = new Instruction(getUniqueId(), makeVoidType(), OpExtInst);
+    inst->addIdOperand(nonSemanticShaderDebugInfo);
+    inst->addImmediateOperand(NonSemanticShaderDebugInfo100DebugValue);
+    inst->addIdOperand(debugLocalVariable); // debug local variable id
+    inst->addIdOperand(value); // value of local variable id
     inst->addIdOperand(makeDebugExpression()); // expression id
     buildPoint->addInstruction(std::unique_ptr<Instruction>(inst));
 
@@ -2061,11 +2108,6 @@ Function* Builder::makeEntryPoint(const char* entryPoint)
 {
     assert(! entryPointFunction);
 
-    Block* entry;
-    std::vector<Id> paramsTypes;
-    std::vector<char const*> paramNames;
-    std::vector<std::vector<Decoration>> decorations;
-
     auto const returnType = makeVoidType();
 
     restoreNonSemanticShaderDebugInfo = emitNonSemanticShaderDebugInfo;
@@ -2073,7 +2115,8 @@ Function* Builder::makeEntryPoint(const char* entryPoint)
         emitNonSemanticShaderDebugInfo = false;
     }
 
-    entryPointFunction = makeFunctionEntry(NoPrecision, returnType, entryPoint, LinkageTypeMax, paramsTypes, paramNames, decorations, &entry);
+    Block* entry = nullptr;
+    entryPointFunction = makeFunctionEntry(NoPrecision, returnType, entryPoint, LinkageTypeMax, {}, {}, &entry);
 
     emitNonSemanticShaderDebugInfo = restoreNonSemanticShaderDebugInfo;
 
@@ -2082,8 +2125,8 @@ Function* Builder::makeEntryPoint(const char* entryPoint)
 
 // Comments in header
 Function* Builder::makeFunctionEntry(Decoration precision, Id returnType, const char* name, LinkageType linkType,
-                                     const std::vector<Id>& paramTypes, const std::vector<char const*>& paramNames,
-                                     const std::vector<std::vector<Decoration>>& decorations, Block **entry)
+                                     const std::vector<Id>& paramTypes,
+                                     const std::vector<std::vector<Decoration>>& decorations, Block** entry)
 {
     // Make the function and initial instructions in it
     Id typeId = makeFunctionType(returnType, paramTypes);
@@ -2148,20 +2191,25 @@ void Builder::setupDebugFunctionEntry(Function* function, const char* name, int 
         Id firstParamId = function->getParamId(0);
 
         for (size_t p = 0; p < paramTypes.size(); ++p) {
-            auto getParamTypeId = [this](Id const& typeId) {
-                if (isPointerType(typeId) || isArrayType(typeId)) {
-                    return getContainedTypeId(typeId);
-                } else {
-                    return typeId;
-                }
-            };
+            bool passByRef = false;
+            Id paramTypeId = paramTypes[p];
+
+            // For pointer-typed parameters, they are actually passed by reference and we need unwrap the pointer to get the actual parameter type.
+            if (isPointerType(paramTypeId) || isArrayType(paramTypeId)) {
+                passByRef = true;
+                paramTypeId = getContainedTypeId(paramTypeId);
+            }
+
             auto const& paramName = paramNames[p];
-            auto const debugLocalVariableId =
-                createDebugLocalVariable(debugId[getParamTypeId(paramTypes[p])], paramName, p + 1);
+            auto const debugLocalVariableId = createDebugLocalVariable(debugId[paramTypeId], paramName, p + 1);
+            auto const paramId = static_cast<Id>(firstParamId + p);
+            debugId[paramId] = debugLocalVariableId;
 
-            debugId[firstParamId + p] = debugLocalVariableId;
-
-            makeDebugDeclare(debugLocalVariableId, firstParamId + p);
+            if (passByRef) {
+                makeDebugDeclare(debugLocalVariableId, paramId);
+            } else {
+                makeDebugValue(debugLocalVariableId, paramId);
+            }
         }
     }
 
@@ -2725,6 +2773,14 @@ Id Builder::createSpecConstantOp(Op opCode, Id typeId, const std::vector<Id>& op
         op->addImmediateOperand(*it);
     module.mapInstruction(op);
     constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(op));
+
+    // OpSpecConstantOp's using 8 or 16 bit types require the associated capability
+    if (containsType(typeId, OpTypeInt, 8))
+        addCapability(CapabilityInt8);
+    if (containsType(typeId, OpTypeInt, 16))
+        addCapability(CapabilityInt16);
+    if (containsType(typeId, OpTypeFloat, 16))
+        addCapability(CapabilityFloat16);
 
     return op->getResultId();
 }

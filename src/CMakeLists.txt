@@ -11,7 +11,6 @@ add_executable(glslcc ${SOURCE_FILES})
 target_link_libraries(glslcc PRIVATE 
         sx
         glslang 
-        OGLCompiler 
         OSDependent 
         SPIRV 
         SPVRemapper 
