@@ -597,6 +597,8 @@ bool TOutputTraverser::visitUnary(TVisit /* visit */, TIntermUnary* node)
     case EOpSubgroupQuadSwapHorizontal:      out.debug << "subgroupQuadSwapHorizontal";      break;
     case EOpSubgroupQuadSwapVertical:        out.debug << "subgroupQuadSwapVertical";        break;
     case EOpSubgroupQuadSwapDiagonal:        out.debug << "subgroupQuadSwapDiagonal";        break;
+    case EOpSubgroupQuadAll:                 out.debug << "subgroupQuadAll";                 break;
+    case EOpSubgroupQuadAny:                 out.debug << "subgroupQuadAny";                 break;
 
     case EOpSubgroupPartition:                          out.debug << "subgroupPartitionNV";                          break;
     case EOpSubgroupPartitionedAdd:                     out.debug << "subgroupPartitionedAddNV";                     break;
@@ -1032,6 +1034,8 @@ bool TOutputTraverser::visitAggregate(TVisit /* visit */, TIntermAggregate* node
     case EOpSubgroupQuadSwapHorizontal:      out.debug << "subgroupQuadSwapHorizontal"; break;
     case EOpSubgroupQuadSwapVertical:        out.debug << "subgroupQuadSwapVertical"; break;
     case EOpSubgroupQuadSwapDiagonal:        out.debug << "subgroupQuadSwapDiagonal"; break;
+    case EOpSubgroupQuadAll:                 out.debug << "subgroupQuadAll"; break;
+    case EOpSubgroupQuadAny:                 out.debug << "subgroupQuadAny"; break;
 
     case EOpSubgroupPartition:                          out.debug << "subgroupPartitionNV";                          break;
     case EOpSubgroupPartitionedAdd:                     out.debug << "subgroupPartitionedAddNV";                     break;
@@ -1511,6 +1515,9 @@ void TIntermediate::output(TInfoSink& infoSink, bool tree)
 
     if (getSubgroupUniformControlFlow())
         infoSink.debug << "subgroup_uniform_control_flow\n";
+
+    if (getMaximallyReconverges())
+        infoSink.debug << "maximally_reconverges\n";
 
     switch (language) {
     case EShLangVertex:

@@ -258,6 +258,7 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_EXT_shader_16bit_storage]                    = EBhDisable;
     extensionBehavior[E_GL_EXT_shader_8bit_storage]                     = EBhDisable;
     extensionBehavior[E_GL_EXT_subgroup_uniform_control_flow]           = EBhDisable;
+    extensionBehavior[E_GL_EXT_maximal_reconvergence]                   = EBhDisable;
 
     extensionBehavior[E_GL_EXT_fragment_shader_barycentric]             = EBhDisable;
 
@@ -356,6 +357,7 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_EXT_spirv_intrinsics]            = EBhDisable;
     extensionBehavior[E_GL_EXT_mesh_shader]                 = EBhDisable;
     extensionBehavior[E_GL_EXT_opacity_micromap]            = EBhDisable;
+    extensionBehavior[E_GL_EXT_shader_quad_control]         = EBhDisable;
     extensionBehavior[E_GL_EXT_ray_tracing_position_fetch]  = EBhDisable;
     extensionBehavior[E_GL_EXT_shader_tile_image]           = EBhDisable;
     extensionBehavior[E_GL_EXT_texture_shadow_lod]          = EBhDisable;
@@ -446,6 +448,7 @@ void TParseVersions::getPreamble(std::string& preamble)
             if (version >= 310) {
                 preamble += "#define GL_EXT_null_initializer 1\n";
                 preamble += "#define GL_EXT_subgroup_uniform_control_flow 1\n";
+                preamble += "#define GL_EXT_maximal_reconvergence 1\n";
             }
 
     } else { // !isEsProfile()
@@ -582,6 +585,7 @@ void TParseVersions::getPreamble(std::string& preamble)
             "#define GL_EXT_shader_atomic_float2 1\n"
 
             "#define GL_EXT_fragment_shader_barycentric 1\n"
+            "#define GL_EXT_shader_quad_control 1\n"
             "#define GL_EXT_texture_array 1\n"
             ;
 
@@ -599,6 +603,7 @@ void TParseVersions::getPreamble(std::string& preamble)
         if (version >= 140) {
             preamble += "#define GL_EXT_null_initializer 1\n";
             preamble += "#define GL_EXT_subgroup_uniform_control_flow 1\n";
+            preamble += "#define GL_EXT_maximal_reconvergence 1\n";
         }
         if (version >= 130) {
             preamble +="#define GL_FRAGMENT_PRECISION_HIGH 1\n";
