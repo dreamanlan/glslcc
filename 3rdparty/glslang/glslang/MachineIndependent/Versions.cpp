@@ -1,7 +1,7 @@
 //
 // Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
 // Copyright (C) 2012-2013 LunarG, Inc.
-// Copyright (C) 2017 ARM Limited.
+// Copyright (C) 2017, 2022-2024 Arm Limited.
 // Copyright (C) 2015-2020 Google, Inc.
 // Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
 //
@@ -235,6 +235,7 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_KHR_shader_subgroup_ballot]           = EBhDisable;
     extensionBehavior[E_GL_KHR_shader_subgroup_shuffle]          = EBhDisable;
     extensionBehavior[E_GL_KHR_shader_subgroup_shuffle_relative] = EBhDisable;
+    extensionBehavior[E_GL_KHR_shader_subgroup_rotate]           = EBhDisable;
     extensionBehavior[E_GL_KHR_shader_subgroup_clustered]        = EBhDisable;
     extensionBehavior[E_GL_KHR_shader_subgroup_quad]             = EBhDisable;
     extensionBehavior[E_GL_KHR_memory_scope_semantics]           = EBhDisable;
@@ -261,6 +262,7 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_EXT_maximal_reconvergence]                   = EBhDisable;
 
     extensionBehavior[E_GL_EXT_fragment_shader_barycentric]             = EBhDisable;
+    extensionBehavior[E_GL_EXT_expect_assume]                           = EBhDisable;
 
     extensionBehavior[E_GL_KHR_cooperative_matrix]                      = EBhDisable;
 
@@ -303,6 +305,7 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_NV_integer_cooperative_matrix]            = EBhDisable;
     extensionBehavior[E_GL_NV_shader_invocation_reorder]             = EBhDisable;
     extensionBehavior[E_GL_NV_displacement_micromap]                 = EBhDisable;
+    extensionBehavior[E_GL_NV_shader_atomic_fp16_vector]             = EBhDisable;
 
     // ARM
     extensionBehavior[E_GL_ARM_shader_core_builtins]                 = EBhDisable;
