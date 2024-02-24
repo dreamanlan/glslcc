@@ -6260,7 +6260,7 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
                 error(loc, "needs a literal integer", "max_primitives", "");
             return;
         }
-        // Fall through
+        [[fallthrough]];
 
     case EShLangTask:
         // Fall through
@@ -7336,7 +7336,7 @@ TIntermTyped* TParseContext::vkRelaxedRemapFunctionCall(const TSourceLoc& loc, T
             realFunc.addParameter(TParameter().copyParam((*function)[i]));
         }
 
-        TParameter tmpP = { nullptr, &uintType };
+        TParameter tmpP = { nullptr, &uintType, {} };
         realFunc.addParameter(TParameter().copyParam(tmpP));
         arguments = intermediate.growAggregate(arguments, intermediate.addConstantUnion(1, loc, true));
 
@@ -7353,7 +7353,7 @@ TIntermTyped* TParseContext::vkRelaxedRemapFunctionCall(const TSourceLoc& loc, T
             realFunc.addParameter(TParameter().copyParam((*function)[i]));
         }
 
-        TParameter tmpP = { nullptr, &uintType };
+        TParameter tmpP = { nullptr, &uintType, {} };
         realFunc.addParameter(TParameter().copyParam(tmpP));
         arguments = intermediate.growAggregate(arguments, intermediate.addConstantUnion(-1, loc, true));
 
@@ -7676,7 +7676,7 @@ TIntermNode* TParseContext::vkRelaxedRemapFunctionArgument(const TSourceLoc& loc
     AccessChainTraverser accessChainTraverser{};
     intermTyped->traverse(&accessChainTraverser);
 
-    TParameter param = { NewPoolTString(accessChainTraverser.path.c_str()), new TType };
+    TParameter param = { NewPoolTString(accessChainTraverser.path.c_str()), new TType, {} };
     param.type->shallowCopy(intermTyped->getType());
 
     std::vector<int> newParams = {};
@@ -8434,6 +8434,7 @@ TIntermTyped* TParseContext::constructBuiltIn(const TType& type, TOperator op, T
                 intermediate.addBuiltInFunctionCall(node->getLoc(), EOpConstructUVec2, false, newSrcNode, type);
             return newNode;
         }
+        [[fallthrough]];
     case EOpConstructUVec3:
     case EOpConstructUVec4:
     case EOpConstructUint:
@@ -8455,6 +8456,7 @@ TIntermTyped* TParseContext::constructBuiltIn(const TType& type, TOperator op, T
                 intermediate.addBuiltInFunctionCall(node->getLoc(), EOpPackUint2x32, true, node, type);
             return newNode;
         }
+        [[fallthrough]];
     case EOpConstructDVec2:
     case EOpConstructDVec3:
     case EOpConstructDVec4:
@@ -8607,7 +8609,7 @@ TIntermTyped* TParseContext::constructBuiltIn(const TType& type, TOperator op, T
             TIntermTyped* newNode = intermediate.addBuiltInFunctionCall(node->getLoc(), EOpConvPtrToUint64, true, node, type);
             return newNode;
         }
-        // fall through
+        [[fallthrough]];
     case EOpConstructU64Vec2:
     case EOpConstructU64Vec3:
     case EOpConstructU64Vec4:
@@ -9672,7 +9674,7 @@ void TParseContext::updateStandaloneQualifierDefaults(const TSourceLoc& loc, con
                     error(loc, "cannot apply to 'out'", TQualifier::getGeometryString(publicType.shaderQualifiers.geometry), "");
                     break;
                 }
-                // Fall through
+                [[fallthrough]];
             case ElgPoints:
             case ElgLineStrip:
             case ElgTriangleStrip:
