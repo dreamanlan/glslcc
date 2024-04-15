@@ -2921,20 +2921,35 @@ void CompilerMSL::add_composite_member_variable_to_interface_block(StorageClass 
                                                                    uint32_t mbr_idx, InterfaceBlockMeta &meta,
                                                                    const string &mbr_name_qual,
                                                                    const string &var_chain_qual,
-                                                                   uint32_t &location, uint32_t &var_mbr_idx)
+                                                                   uint32_t &location, uint32_t &var_mbr_idx,
+                                                                   const Bitset &interpolation_qual)
 {
 	auto &entry_func = get<SPIRFunction>(ir.default_entry_point);
 
 	BuiltIn builtin = BuiltInMax;
 	bool is_builtin = is_member_builtin(var_type, mbr_idx, &builtin);
-	bool is_flat =
-	    has_member_decoration(var_type.self, mbr_idx, DecorationFlat) || has_decoration(var.self, DecorationFlat);
-	bool is_noperspective = has_member_decoration(var_type.self, mbr_idx, DecorationNoPerspective) ||
+	bool is_flat = interpolation_qual.get(DecorationFlat) ||
+	               has_member_decoration(var_type.self, mbr_idx, DecorationFlat) ||
+	               has_decoration(var.self, DecorationFlat);
+	bool is_noperspective = interpolation_qual.get(DecorationNoPerspective) ||
+	                        has_member_decoration(var_type.self, mbr_idx, DecorationNoPerspective) ||
 	                        has_decoration(var.self, DecorationNoPerspective);
-	bool is_centroid = has_member_decoration(var_type.self, mbr_idx, DecorationCentroid) ||
+	bool is_centroid = interpolation_qual.get(DecorationCentroid) ||
+	                   has_member_decoration(var_type.self, mbr_idx, DecorationCentroid) ||
 	                   has_decoration(var.self, DecorationCentroid);
-	bool is_sample =
-	    has_member_decoration(var_type.self, mbr_idx, DecorationSample) || has_decoration(var.self, DecorationSample);
+	bool is_sample = interpolation_qual.get(DecorationSample) ||
+	                 has_member_decoration(var_type.self, mbr_idx, DecorationSample) ||
+	                 has_decoration(var.self, DecorationSample);
+
+	Bitset inherited_qual;
+	if (is_flat)
+		inherited_qual.set(DecorationFlat);
+	if (is_noperspective)
+		inherited_qual.set(DecorationNoPerspective);
+	if (is_centroid)
+		inherited_qual.set(DecorationCentroid);
+	if (is_sample)
+		inherited_qual.set(DecorationSample);
 
 	uint32_t mbr_type_id = var_type.member_types[mbr_idx];
 	auto &mbr_type = get<SPIRType>(mbr_type_id);
@@ -2998,7 +3013,7 @@ void CompilerMSL::add_composite_member_variable_to_interface_block(StorageClass 
 				add_composite_member_variable_to_interface_block(storage, ib_var_ref, ib_type,
 																 var, mbr_type, sub_mbr_idx,
 																 meta, mbr_name, var_chain,
-																 location, var_mbr_idx);
+																 location, var_mbr_idx, inherited_qual);
 				// FIXME: Recursive structs and tessellation breaks here.
 				var_mbr_idx++;
 			}
@@ -3684,7 +3699,7 @@ void CompilerMSL::add_variable_to_interface_block(StorageClass storage, const st
 							add_composite_member_variable_to_interface_block(storage, ib_var_ref, ib_type,
 							                                                 var, var_type, mbr_idx, meta,
 							                                                 mbr_name_qual, var_chain_qual,
-							                                                 location, var_mbr_idx);
+							                                                 location, var_mbr_idx, {});
 						}
 						else
 						{
@@ -5564,9 +5579,8 @@ void CompilerMSL::emit_custom_templates()
 // otherwise they will cause problems when linked together in a single Metallib.
 void CompilerMSL::emit_custom_functions()
 {
-	for (uint32_t i = kArrayCopyMultidimMax; i >= 2; i--)
-		if (spv_function_implementations.count(static_cast<SPVFuncImpl>(SPVFuncImplArrayCopyMultidimBase + i)))
-			spv_function_implementations.insert(static_cast<SPVFuncImpl>(SPVFuncImplArrayCopyMultidimBase + i - 1));
+	if (spv_function_implementations.count(SPVFuncImplArrayCopyMultidim))
+		spv_function_implementations.insert(SPVFuncImplArrayCopy);
 
 	if (spv_function_implementations.count(SPVFuncImplDynamicImageSampler))
 	{
@@ -5677,11 +5691,7 @@ void CompilerMSL::emit_custom_functions()
 			break;
 
 		case SPVFuncImplArrayCopy:
-		case SPVFuncImplArrayOfArrayCopy2Dim:
-		case SPVFuncImplArrayOfArrayCopy3Dim:
-		case SPVFuncImplArrayOfArrayCopy4Dim:
-		case SPVFuncImplArrayOfArrayCopy5Dim:
-		case SPVFuncImplArrayOfArrayCopy6Dim:
+		case SPVFuncImplArrayCopyMultidim:
 		{
 			// Unfortunately we cannot template on the address space, so combinatorial explosion it is.
 			static const char *function_name_tags[] = {
@@ -5704,36 +5714,19 @@ void CompilerMSL::emit_custom_functions()
 
 			for (uint32_t variant = 0; variant < 12; variant++)
 			{
-				uint8_t dimensions = spv_func - SPVFuncImplArrayCopyMultidimBase;
-				string tmp = "template<typename T";
-				for (uint8_t i = 0; i < dimensions; i++)
-				{
-					tmp += ", uint ";
-					tmp += 'A' + i;
-				}
-				tmp += ">";
-				statement(tmp);
-
-				string array_arg;
-				for (uint8_t i = 0; i < dimensions; i++)
-				{
-					array_arg += "[";
-					array_arg += 'A' + i;
-					array_arg += "]";
-				}
-
-				statement("inline void spvArrayCopy", function_name_tags[variant], dimensions, "(",
-				          dst_address_space[variant], " T (&dst)", array_arg, ", ", src_address_space[variant],
-				          " T (&src)", array_arg, ")");
-
+				bool is_multidim = spv_func == SPVFuncImplArrayCopyMultidim;
+				const char* dim = is_multidim ? "[N][M]" : "[N]";
+				statement("template<typename T, uint N", is_multidim ? ", uint M>" : ">");
+				statement("inline void spvArrayCopy", function_name_tags[variant], "(",
+				          dst_address_space[variant], " T (&dst)", dim, ", ",
+				          src_address_space[variant], " T (&src)", dim, ")");
 				begin_scope();
-				statement("for (uint i = 0; i < A; i++)");
+				statement("for (uint i = 0; i < N; i++)");
 				begin_scope();
-
-				if (dimensions == 1)
-					statement("dst[i] = src[i];");
+				if (is_multidim)
+					statement("spvArrayCopy", function_name_tags[variant], "(dst[i], src[i]);");
 				else
-					statement("spvArrayCopy", function_name_tags[variant], dimensions - 1, "(dst[i], src[i]);");
+					statement("dst[i] = src[i];");
 				end_scope();
 				end_scope();
 				statement("");
@@ -7495,6 +7488,17 @@ void CompilerMSL::emit_custom_functions()
 		case SPVFuncImplImageFence:
 			statement("template <typename ImageT>");
 			statement("void spvImageFence(ImageT img) { img.fence(); }");
+			statement("");
+			break;
+
+		case SPVFuncImplTextureCast:
+			statement("template <typename T, typename U>");
+			statement("T spvTextureCast(U img)");
+			begin_scope();
+			// MSL complains if you try to cast the texture itself, but casting the reference type is ... ok? *shrug*
+			// Gotta go what you gotta do I suppose.
+			statement("return reinterpret_cast<thread const T &>(img);");
+			end_scope();
 			statement("");
 			break;
 
@@ -9428,32 +9432,12 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
 		uint32_t op1 = ops[3];
 		auto &type = get<SPIRType>(result_type);
 		auto input_type = opcode == OpSMulExtended ? int_type : uint_type;
-		auto &output_type = get_type(result_type);
 		string cast_op0, cast_op1;
 
-		auto expected_type = binary_op_bitcast_helper(cast_op0, cast_op1, input_type, op0, op1, false);
-
+		binary_op_bitcast_helper(cast_op0, cast_op1, input_type, op0, op1, false);
 		emit_uninitialized_temporary_expression(result_type, result_id);
-
-		string mullo_expr, mulhi_expr;
-		mullo_expr = join(cast_op0, " * ", cast_op1);
-		mulhi_expr = join("mulhi(", cast_op0, ", ", cast_op1, ")");
-
-		auto &low_type = get_type(output_type.member_types[0]);
-		auto &high_type = get_type(output_type.member_types[1]);
-		if (low_type.basetype != input_type)
-		{
-			expected_type.basetype = input_type;
-			mullo_expr = join(bitcast_glsl_op(low_type, expected_type), "(", mullo_expr, ")");
-		}
-		if (high_type.basetype != input_type)
-		{
-			expected_type.basetype = input_type;
-			mulhi_expr = join(bitcast_glsl_op(high_type, expected_type), "(", mulhi_expr, ")");
-		}
-
-		statement(to_expression(result_id), ".", to_member_name(type, 0), " = ", mullo_expr, ";");
-		statement(to_expression(result_id), ".", to_member_name(type, 1), " = ", mulhi_expr, ";");
+		statement(to_expression(result_id), ".", to_member_name(type, 0), " = ", cast_op0, " * ", cast_op1, ";");
+		statement(to_expression(result_id), ".", to_member_name(type, 1), " = mulhi(", cast_op0, ", ", cast_op1, ");");
 		break;
 	}
 
@@ -10020,15 +10004,7 @@ bool CompilerMSL::emit_array_copy(const char *expr, uint32_t lhs_id, uint32_t rh
 		// we cannot easily detect this case ahead of time since it's
 		// context dependent. We might have to force a recompile here
 		// if this is the only use of array copies in our shader.
-		if (type.array.size() > 1)
-		{
-			if (type.array.size() > kArrayCopyMultidimMax)
-				SPIRV_CROSS_THROW("Cannot support this many dimensions for arrays of arrays.");
-			auto func = static_cast<SPVFuncImpl>(SPVFuncImplArrayCopyMultidimBase + type.array.size());
-			add_spv_func_and_recompile(func);
-		}
-		else
-			add_spv_func_and_recompile(SPVFuncImplArrayCopy);
+		add_spv_func_and_recompile(type.array.size() > 1 ? SPVFuncImplArrayCopyMultidim : SPVFuncImplArrayCopy);
 
 		const char *tag = nullptr;
 		if (lhs_is_thread_storage && is_constant)
@@ -10060,13 +10036,13 @@ bool CompilerMSL::emit_array_copy(const char *expr, uint32_t lhs_id, uint32_t rh
 
 		// Pass internal array of spvUnsafeArray<> into wrapper functions
 		if (lhs_is_array_template && rhs_is_array_template && !msl_options.force_native_arrays)
-			statement("spvArrayCopy", tag, type.array.size(), "(", lhs, ".elements, ", to_expression(rhs_id), ".elements);");
+			statement("spvArrayCopy", tag, "(", lhs, ".elements, ", to_expression(rhs_id), ".elements);");
 		if (lhs_is_array_template && !msl_options.force_native_arrays)
-			statement("spvArrayCopy", tag, type.array.size(), "(", lhs, ".elements, ", to_expression(rhs_id), ");");
+			statement("spvArrayCopy", tag, "(", lhs, ".elements, ", to_expression(rhs_id), ");");
 		else if (rhs_is_array_template && !msl_options.force_native_arrays)
-			statement("spvArrayCopy", tag, type.array.size(), "(", lhs, ", ", to_expression(rhs_id), ".elements);");
+			statement("spvArrayCopy", tag, "(", lhs, ", ", to_expression(rhs_id), ".elements);");
 		else
-			statement("spvArrayCopy", tag, type.array.size(), "(", lhs, ", ", to_expression(rhs_id), ");");
+			statement("spvArrayCopy", tag, "(", lhs, ", ", to_expression(rhs_id), ");");
 	}
 
 	return true;
@@ -10213,7 +10189,35 @@ void CompilerMSL::emit_atomic_func_op(uint32_t result_type, uint32_t result_id, 
 		if (split_index != string::npos)
 		{
 			auto coord = obj_expression.substr(split_index + 1);
-			exp += join(obj_expression.substr(0, split_index), ".", op, "(");
+			auto image_expr = obj_expression.substr(0, split_index);
+
+			// Handle problem cases with sign where we need signed min/max on a uint image for example.
+			// It seems to work to cast the texture type itself, even if it is probably wildly outside of spec,
+			// but SPIR-V requires this to work.
+			if ((opcode == OpAtomicUMax || opcode == OpAtomicUMin ||
+			     opcode == OpAtomicSMax || opcode == OpAtomicSMin) &&
+			    type.basetype != expected_type)
+			{
+				auto *backing_var = maybe_get_backing_variable(obj);
+				if (backing_var)
+				{
+					add_spv_func_and_recompile(SPVFuncImplTextureCast);
+
+					const auto *backing_type = &get<SPIRType>(backing_var->basetype);
+					while (backing_type->op != OpTypeImage)
+						backing_type = &get<SPIRType>(backing_type->parent_type);
+
+					auto img_type = *backing_type;
+					auto tmp_type = type;
+					tmp_type.basetype = expected_type;
+					img_type.image.type = ir.increase_bound_by(1);
+					set<SPIRType>(img_type.image.type, tmp_type);
+
+					image_expr = join("spvTextureCast<", type_to_glsl(img_type, obj), ">(", image_expr, ")");
+				}
+			}
+
+			exp += join(image_expr, ".", op, "(");
 			if (ptr_type.storage == StorageClassImage && res_type->image.arrayed)
 			{
 				switch (res_type->image.dim)
@@ -15686,8 +15690,8 @@ string CompilerMSL::image_type_glsl(const SPIRType &type, uint32_t id, bool memb
 
 	string img_type_name;
 
-	// Bypass pointers because we need the real image struct
-	auto &img_type = get<SPIRType>(type.self).image;
+	auto &img_type = type.image;
+
 	if (is_depth_image(type, id))
 	{
 		switch (img_type.dim)

@@ -287,9 +287,6 @@ static const uint32_t kArgumentBufferBinding = ~(3u);
 
 static const uint32_t kMaxArgumentBuffers = 8;
 
-// The arbitrary maximum for the nesting of array of array copies.
-static const uint32_t kArrayCopyMultidimMax = 6;
-
 // Decompiles SPIR-V to Metal Shading Language
 class CompilerMSL : public CompilerGLSL
 {
@@ -752,15 +749,8 @@ protected:
 		SPVFuncImplFindSMsb,
 		SPVFuncImplFindUMsb,
 		SPVFuncImplSSign,
-		SPVFuncImplArrayCopyMultidimBase,
-		// Unfortunately, we cannot use recursive templates in the MSL compiler properly,
-		// so stamp out variants up to some arbitrary maximum.
-		SPVFuncImplArrayCopy = SPVFuncImplArrayCopyMultidimBase + 1,
-		SPVFuncImplArrayOfArrayCopy2Dim = SPVFuncImplArrayCopyMultidimBase + 2,
-		SPVFuncImplArrayOfArrayCopy3Dim = SPVFuncImplArrayCopyMultidimBase + 3,
-		SPVFuncImplArrayOfArrayCopy4Dim = SPVFuncImplArrayCopyMultidimBase + 4,
-		SPVFuncImplArrayOfArrayCopy5Dim = SPVFuncImplArrayCopyMultidimBase + 5,
-		SPVFuncImplArrayOfArrayCopy6Dim = SPVFuncImplArrayCopyMultidimBase + 6,
+		SPVFuncImplArrayCopy,
+		SPVFuncImplArrayCopyMultidim,
 		SPVFuncImplTexelBufferCoords,
 		SPVFuncImplImage2DAtomicCoords, // Emulate texture2D atomic operations
 		SPVFuncImplGradientCube,
@@ -825,7 +815,8 @@ protected:
 		SPVFuncImplVariableDescriptorArray,
 		SPVFuncImplPaddedStd140,
 		SPVFuncImplReduceAdd,
-		SPVFuncImplImageFence
+		SPVFuncImplImageFence,
+		SPVFuncImplTextureCast
 	};
 
 	// If the underlying resource has been used for comparison then duplicate loads of that resource must be too
@@ -960,7 +951,8 @@ protected:
 	                                                      uint32_t mbr_idx, InterfaceBlockMeta &meta,
 	                                                      const std::string &mbr_name_qual,
 	                                                      const std::string &var_chain_qual,
-	                                                      uint32_t &location, uint32_t &var_mbr_idx);
+	                                                      uint32_t &location, uint32_t &var_mbr_idx,
+	                                                      const Bitset &interpolation_qual);
 	void add_tess_level_input_to_interface_block(const std::string &ib_var_ref, SPIRType &ib_type, SPIRVariable &var);
 	void add_tess_level_input(const std::string &base_ref, const std::string &mbr_name, SPIRVariable &var);
 
