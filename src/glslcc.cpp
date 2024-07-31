@@ -57,6 +57,8 @@
 #include "spirv_hlsl.hpp"
 #include "spirv_msl.hpp"
 
+#include "glslang/Public/ShaderLang.h"
+
 #include "config.h"
 #include "sgs-file.h"
 
