@@ -1,6 +1,5 @@
 //
-// Copyright (C) 2013 LunarG, Inc.
-//
+// Copyright (C) 2024 The Khronos Group Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,63 +31,7 @@
 // ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-#ifndef WORKLIST_H_INCLUDED
-#define WORKLIST_H_INCLUDED
 
-#include <list>
-#include <mutex>
-#include <string>
-
-namespace glslang {
-
-    class TWorkItem {
-    public:
-        TWorkItem() { }
-        explicit TWorkItem(const std::string& s) :
-            name(s) { }
-        std::string name;
-        std::string results;
-        std::string resultsIndex;
-    };
-
-    class TWorklist {
-    public:
-        TWorklist() { }
-        virtual ~TWorklist() { }
-
-        void add(TWorkItem* item)
-        {
-            std::lock_guard<std::mutex> guard(mutex);
-            worklist.push_back(item);
-        }
-
-        bool remove(TWorkItem*& item)
-        {
-            std::lock_guard<std::mutex> guard(mutex);
-
-            if (worklist.empty())
-                return false;
-            item = worklist.front();
-            worklist.pop_front();
-
-            return true;
-        }
-
-        int size()
-        {
-            return (int)worklist.size();
-        }
-
-        bool empty()
-        {
-            return worklist.empty();
-        }
-
-    protected:
-        std::mutex mutex;
-        std::list<TWorkItem*> worklist;
-    };
-
-} // end namespace glslang
-
-#endif // WORKLIST_H_INCLUDED
+// This empty source file exists to support building stubbed versions of
+// deprecated libraries which have been integrated into the main glslang
+// library. It should be deleted once the stub libraries are fully removed.
