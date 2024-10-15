@@ -7599,6 +7599,16 @@ void CompilerMSL::emit_custom_functions()
 			statement("");
 			break;
 
+		case SPVFuncImplMulExtended:
+			// Compiler may hit an internal error with mulhi, but doesn't when encapsulated for some reason.
+			statement("template<typename T, typename U, typename V>");
+			statement("[[clang::optnone]] T spvMulExtended(V l, V r)");
+			begin_scope();
+			statement("return T{U(l * r), U(mulhi(l, r))};");
+			end_scope();
+			statement("");
+			break;
+
 		default:
 			break;
 		}
@@ -9550,13 +9560,13 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
 		uint32_t op0 = ops[2];
 		uint32_t op1 = ops[3];
 		auto &type = get<SPIRType>(result_type);
+		auto &op_type = get<SPIRType>(type.member_types[0]);
 		auto input_type = opcode == OpSMulExtended ? int_type : uint_type;
 		string cast_op0, cast_op1;
 
 		binary_op_bitcast_helper(cast_op0, cast_op1, input_type, op0, op1, false);
-		emit_uninitialized_temporary_expression(result_type, result_id);
-		statement(to_expression(result_id), ".", to_member_name(type, 0), " = ", cast_op0, " * ", cast_op1, ";");
-		statement(to_expression(result_id), ".", to_member_name(type, 1), " = mulhi(", cast_op0, ", ", cast_op1, ");");
+		auto expr = join("spvMulExtended<", type_to_glsl(type), ", ", type_to_glsl(op_type), ">(", cast_op0, ", ", cast_op1, ")");
+		emit_op(result_type, result_id, expr, true);
 		break;
 	}
 
@@ -12759,17 +12769,10 @@ string CompilerMSL::member_attribute_qualifier(const SPIRType &type, uint32_t in
 		else
 			quals = member_location_attribute_qualifier(type, index);
 
-		if (builtin == BuiltInBaryCoordKHR || builtin == BuiltInBaryCoordNoPerspKHR)
+		if (builtin == BuiltInBaryCoordKHR && has_member_decoration(type.self, index, DecorationNoPerspective))
 		{
-			if (has_member_decoration(type.self, index, DecorationFlat) ||
-			    has_member_decoration(type.self, index, DecorationCentroid) ||
-			    has_member_decoration(type.self, index, DecorationSample) ||
-			    has_member_decoration(type.self, index, DecorationNoPerspective))
-			{
-				// NoPerspective is baked into the builtin type.
-				SPIRV_CROSS_THROW(
-				    "Flat, Centroid, Sample, NoPerspective decorations are not supported for BaryCoord inputs.");
-			}
+			// NoPerspective is baked into the builtin type.
+			SPIRV_CROSS_THROW("NoPerspective decorations are not supported for BaryCoord inputs.");
 		}
 
 		// Don't bother decorating integers with the 'flat' attribute; it's
@@ -12787,7 +12790,7 @@ string CompilerMSL::member_attribute_qualifier(const SPIRType &type, uint32_t in
 			{
 				if (!quals.empty())
 					quals += ", ";
-				if (has_member_decoration(type.self, index, DecorationNoPerspective))
+				if (has_member_decoration(type.self, index, DecorationNoPerspective) || builtin == BuiltInBaryCoordNoPerspKHR)
 					quals += "centroid_no_perspective";
 				else
 					quals += "centroid_perspective";
@@ -12796,16 +12799,22 @@ string CompilerMSL::member_attribute_qualifier(const SPIRType &type, uint32_t in
 			{
 				if (!quals.empty())
 					quals += ", ";
-				if (has_member_decoration(type.self, index, DecorationNoPerspective))
+				if (has_member_decoration(type.self, index, DecorationNoPerspective) || builtin == BuiltInBaryCoordNoPerspKHR)
 					quals += "sample_no_perspective";
 				else
 					quals += "sample_perspective";
 			}
-			else if (has_member_decoration(type.self, index, DecorationNoPerspective))
+			else if (has_member_decoration(type.self, index, DecorationNoPerspective) || builtin == BuiltInBaryCoordNoPerspKHR)
 			{
 				if (!quals.empty())
 					quals += ", ";
 				quals += "center_no_perspective";
+			}
+			else if (builtin == BuiltInBaryCoordKHR)
+			{
+				if (!quals.empty())
+					quals += ", ";
+				quals += "center_perspective";
 			}
 		}
 
@@ -13874,6 +13883,7 @@ void CompilerMSL::entry_point_args_discrete_descriptors(string &ep_args)
 					}
 					else
 					{
+						add_spv_func_and_recompile(SPVFuncImplVariableDescriptor);
 						ep_args += "const device spvDescriptor<" + get_argument_address_space(var) + " " +
 						           type_to_glsl(type) + "*>* ";
 					}
@@ -16808,18 +16818,12 @@ string CompilerMSL::builtin_qualifier(BuiltIn builtin)
 		SPIRV_CROSS_THROW("Subgroup ballot masks are handled specially in MSL.");
 
 	case BuiltInBaryCoordKHR:
-		if (msl_options.is_ios() && !msl_options.supports_msl_version(2, 3))
-			SPIRV_CROSS_THROW("Barycentrics are only supported in MSL 2.3 and above on iOS.");
-		else if (!msl_options.supports_msl_version(2, 2))
-			SPIRV_CROSS_THROW("Barycentrics are only supported in MSL 2.2 and above on macOS.");
-		return "barycentric_coord, center_perspective";
-
 	case BuiltInBaryCoordNoPerspKHR:
 		if (msl_options.is_ios() && !msl_options.supports_msl_version(2, 3))
 			SPIRV_CROSS_THROW("Barycentrics are only supported in MSL 2.3 and above on iOS.");
 		else if (!msl_options.supports_msl_version(2, 2))
 			SPIRV_CROSS_THROW("Barycentrics are only supported in MSL 2.2 and above on macOS.");
-		return "barycentric_coord, center_no_perspective";
+		return "barycentric_coord";
 
 	default:
 		return "unsupported-built-in";
@@ -17706,6 +17710,10 @@ CompilerMSL::SPVFuncImpl CompilerMSL::OpCodePreprocessor::get_spv_func_impl(Op o
 	case OpUDotAccSat:
 	case OpSUDotAccSat:
 		return SPVFuncImplReduceAdd;
+
+	case OpSMulExtended:
+	case OpUMulExtended:
+		return SPVFuncImplMulExtended;
 
 	default:
 		break;
