@@ -786,7 +786,8 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.coopmat2_constructor.comp",
         "spv.coopmat2_error.comp",
         "spv.coopmat2_tensor.comp",
-        "spv.1.6.nontemporalimage.frag"
+        "spv.1.6.nontemporalimage.frag",
+        "spv.noexplicitlayout.comp",
     })),
     FileNameAsCustomTestSuffix
 );
@@ -1007,6 +1008,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.debuginfo.include.glsl.frag",
         "spv.debuginfo.multiline.glsl.frag",
         "spv.debuginfo.implicit_br.glsl.frag",
+        "spv.debuginfo.non_ascii.glsl.frag",
     })),
     FileNameAsCustomTestSuffix
 );
