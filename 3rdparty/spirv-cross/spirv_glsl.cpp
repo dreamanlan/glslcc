@@ -15421,12 +15421,27 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		if (!is_forcing_recompilation())
 			split_expr = split_coopmat_pointer(expr);
 
+		string layout_expr;
+		if (const auto *layout = maybe_get<SPIRConstant>(ops[3]))
+		{
+			if (!layout->specialization)
+			{
+				if (layout->scalar() == spv::CooperativeMatrixLayoutColumnMajorKHR)
+					layout_expr = "gl_CooperativeMatrixLayoutColumnMajor";
+				else
+					layout_expr = "gl_CooperativeMatrixLayoutRowMajor";
+			}
+		}
+
+		if (layout_expr.empty())
+			layout_expr = join("int(", to_expression(ops[3]), ")");
+
 		statement("coopMatLoad(",
 		          to_expression(id), ", ",
 		          split_expr.first, ", ",
 		          split_expr.second, ", ",
 		          to_expression(ops[4]), ", ",
-		          to_expression(ops[3]), ");");
+		          layout_expr, ");");
 
 		register_read(id, ops[2], false);
 		break;
@@ -15446,12 +15461,27 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		if (!is_forcing_recompilation())
 			split_expr = split_coopmat_pointer(expr);
 
+		string layout_expr;
+		if (const auto *layout = maybe_get<SPIRConstant>(ops[2]))
+		{
+			if (!layout->specialization)
+			{
+				if (layout->scalar() == spv::CooperativeMatrixLayoutColumnMajorKHR)
+					layout_expr = "gl_CooperativeMatrixLayoutColumnMajor";
+				else
+					layout_expr = "gl_CooperativeMatrixLayoutRowMajor";
+			}
+		}
+
+		if (layout_expr.empty())
+			layout_expr = join("int(", to_expression(ops[2]), ")");
+
 		statement("coopMatStore(",
 		          to_expression(ops[1]), ", ",
 		          split_expr.first, ", ",
 		          split_expr.second, ", ",
 		          to_expression(ops[3]), ", ",
-		          to_expression(ops[2]), ");");
+		          layout_expr, ");");
 
 		// TODO: Do we care about memory operands?
 
@@ -16360,8 +16390,26 @@ string CompilerGLSL::type_to_glsl(const SPIRType &type, uint32_t id)
 			SPIRV_CROSS_THROW("Invalid matrix use.");
 		}
 
+		string scope_expr;
+		if (const auto *scope = maybe_get<SPIRConstant>(coop_type->cooperative.scope_id))
+		{
+			if (!scope->specialization)
+			{
+				require_extension_internal("GL_KHR_memory_scope_semantics");
+				if (scope->scalar() == spv::ScopeSubgroup)
+					scope_expr = "gl_ScopeSubgroup";
+				else if (scope->scalar() == spv::ScopeWorkgroup)
+					scope_expr = "gl_ScopeWorkgroup";
+				else
+					SPIRV_CROSS_THROW("Invalid scope for cooperative matrix.");
+			}
+		}
+
+		if (scope_expr.empty())
+			scope_expr = to_expression(coop_type->cooperative.scope_id);
+
 		return join("coopmat<", type_to_glsl(get<SPIRType>(coop_type->parent_type)), ", ",
-		            to_expression(coop_type->cooperative.scope_id), ", ",
+		            scope_expr, ", ",
 		            to_expression(coop_type->cooperative.rows_id), ", ",
 		            to_expression(coop_type->cooperative.columns_id), ", ", use, ">");
 	}
@@ -16595,6 +16643,11 @@ void CompilerGLSL::add_function_overload(const SPIRFunction &func)
 		// but that will not change the signature in GLSL/HLSL,
 		// so strip the pointer type before hashing.
 		uint32_t type_id = get_pointee_type_id(arg.type);
+
+		// Workaround glslang bug. It seems to only consider the base type when resolving overloads.
+		if (get<SPIRType>(type_id).op == spv::OpTypeCooperativeMatrixKHR)
+			type_id = get<SPIRType>(type_id).parent_type;
+
 		auto &type = get<SPIRType>(type_id);
 
 		if (!combined_image_samplers.empty())
