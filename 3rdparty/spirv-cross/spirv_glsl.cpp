@@ -631,6 +631,12 @@ void CompilerGLSL::find_static_extensions()
 		require_extension_internal("GL_OVR_multiview2");
 	}
 
+	if (execution.flags.get(ExecutionModeQuadDerivativesKHR) ||
+	    (execution.flags.get(ExecutionModeRequireFullQuadsKHR) && get_execution_model() == ExecutionModelFragment))
+	{
+		require_extension_internal("GL_EXT_shader_quad_control");
+	}
+
 	// KHR one is likely to get promoted at some point, so if we don't see an explicit SPIR-V extension, assume KHR.
 	for (auto &ext : ir.declared_extensions)
 		if (ext == "SPV_NV_fragment_shader_barycentric")
@@ -672,7 +678,6 @@ string CompilerGLSL::compile()
 		// only NV_gpu_shader5 supports divergent indexing on OpenGL, and it does so without extra qualifiers
 		backend.nonuniform_qualifier = "";
 		backend.needs_row_major_load_workaround = options.enable_row_major_load_workaround;
-		backend.requires_emulated_smod = true;
 	}
 	backend.allow_precision_qualifiers = options.vulkan_semantics || options.es;
 	backend.force_gl_in_out_block = true;
@@ -1194,6 +1199,9 @@ void CompilerGLSL::emit_header()
 		else if (!options.es && execution.flags.get(ExecutionModeDepthLess))
 			statement("layout(depth_less) out float gl_FragDepth;");
 
+		if (execution.flags.get(ExecutionModeRequireFullQuadsKHR))
+			statement("layout(full_quads) in;");
+
 		break;
 
 	default:
@@ -1203,6 +1211,9 @@ void CompilerGLSL::emit_header()
 	for (auto &cap : ir.declared_capabilities)
 		if (cap == CapabilityRayTraversalPrimitiveCullingKHR)
 			statement("layout(primitive_culling);");
+
+	if (execution.flags.get(ExecutionModeQuadDerivativesKHR))
+		statement("layout(quad_derivatives) in;");
 
 	if (!inputs.empty())
 		statement("layout(", merge(inputs), ") in;");
@@ -5679,6 +5690,7 @@ string CompilerGLSL::constant_op_expression(const SPIRConstantOp &cop)
 		GLSL_BOP(SDiv, "/");
 		GLSL_BOP(UDiv, "/");
 		GLSL_BOP(UMod, "%");
+		GLSL_BOP(SMod, "%");
 		GLSL_BOP(ShiftRightLogical, ">>");
 		GLSL_BOP(ShiftRightArithmetic, ">>");
 		GLSL_BOP(ShiftLeftLogical, "<<");
@@ -5700,22 +5712,6 @@ string CompilerGLSL::constant_op_expression(const SPIRConstantOp &cop)
 		GLSL_BOP(SGreaterThan, ">");
 		GLSL_BOP(UGreaterThanEqual, ">=");
 		GLSL_BOP(SGreaterThanEqual, ">=");
-
-	case OpSMod:
-		if (backend.requires_emulated_smod)
-		{
-			auto left = cop.arguments[0];
-			auto right = cop.arguments[1];
-			track_expression_read(left);
-			track_expression_read(right);
-			auto left_expr = to_enclosed_unpacked_expression(left);
-			auto right_expr = to_enclosed_unpacked_expression(right);
-			auto expr = join("(", left_expr, " - ", right_expr, " * ", "(", left_expr, " / ", right_expr, ") + ", right_expr, ")");
-			return join(expr, " - ", right_expr, " * ", "(", expr, " / ", right_expr, ")");
-		}
-		binary = true;
-		op = "%";
-		break;
 
 	case OpSRem:
 	{
@@ -7521,43 +7517,6 @@ string CompilerGLSL::to_ternary_expression(const SPIRType &restype, uint32_t sel
 	}
 
 	return expr;
-}
-
-void CompilerGLSL::emit_signed_remainder(uint32_t result_type, uint32_t id, uint32_t left, uint32_t right,
-                                         SPIRType::BaseType int_type, bool implicit_integer_promotion,
-                                         bool divisor_sign)
-{
-	auto &out_type = get<SPIRType>(result_type);
-
-	bool forward = should_forward(left) && should_forward(right);
-	string cast_left, cast_right;
-	auto expected_type = binary_op_bitcast_helper(cast_left, cast_right, int_type, left, right, false);
-
-	// Needs special handling.
-	auto expr = join(cast_left, " - ", cast_right, " * ", "(", cast_left, " / ", cast_right, ")");
-	if (divisor_sign)
-	{
-		// Rather than replacing the integer division with float floor-division, we can
-		// apply (result + rhs) % rhs to the previous result to get the correct output.
-		track_expression_read(left);
-		track_expression_read(right);
-		auto new_left = join("(", expr, " + ", cast_right, ")");
-		expr = join(new_left, " - ", cast_right, " * ", "(", new_left, " / ", cast_right, ")");
-	}
-
-	if (implicit_integer_promotion)
-	{
-		expr = join(type_to_glsl(get<SPIRType>(result_type)), '(', expr, ')');
-	}
-	else if (out_type.basetype != int_type)
-	{
-		expected_type.basetype = int_type;
-		expr = join(bitcast_glsl_op(out_type, expected_type), '(', expr, ')');
-	}
-
-	emit_op(result_type, id, expr, forward);
-	inherit_expression_dependencies(id, left);
-	inherit_expression_dependencies(id, right);
 }
 
 void CompilerGLSL::emit_mix_op(uint32_t result_type, uint32_t id, uint32_t left, uint32_t right, uint32_t lerp)
@@ -9515,6 +9474,13 @@ void CompilerGLSL::emit_subgroup_op(const Instruction &i)
 		require_extension_internal("GL_KHR_shader_subgroup_quad");
 		break;
 
+	case OpGroupNonUniformQuadAllKHR:
+	case OpGroupNonUniformQuadAnyKHR:
+		// Require both extensions to be enabled.
+		require_extension_internal("GL_KHR_shader_subgroup_vote");
+		require_extension_internal("GL_EXT_shader_quad_control");
+		break;
+
 	default:
 		SPIRV_CROSS_THROW("Invalid opcode for subgroup.");
 	}
@@ -9522,9 +9488,13 @@ void CompilerGLSL::emit_subgroup_op(const Instruction &i)
 	uint32_t result_type = ops[0];
 	uint32_t id = ops[1];
 
-	auto scope = static_cast<Scope>(evaluate_constant_u32(ops[2]));
-	if (scope != ScopeSubgroup)
-		SPIRV_CROSS_THROW("Only subgroup scope is supported.");
+	// These quad ops do not have a scope parameter.
+	if (op != OpGroupNonUniformQuadAllKHR && op != OpGroupNonUniformQuadAnyKHR)
+	{
+		auto scope = static_cast<Scope>(evaluate_constant_u32(ops[2]));
+		if (scope != ScopeSubgroup)
+			SPIRV_CROSS_THROW("Only subgroup scope is supported.");
+	}
 
 	switch (op)
 	{
@@ -9683,6 +9653,14 @@ case OpGroupNonUniform##op: \
 		emit_binary_func_op(result_type, id, ops[3], ops[4], "subgroupQuadBroadcast");
 		break;
 	}
+
+	case OpGroupNonUniformQuadAllKHR:
+		emit_unary_func_op(result_type, id, ops[2], "subgroupQuadAll");
+		break;
+
+	case OpGroupNonUniformQuadAnyKHR:
+		emit_unary_func_op(result_type, id, ops[2], "subgroupQuadAny");
+		break;
 
 	default:
 		SPIRV_CROSS_THROW("Invalid opcode for subgroup.");
@@ -13388,8 +13366,36 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		break;
 
 	case OpSRem:
-		emit_signed_remainder(ops[0], ops[1], ops[2], ops[3], int_type, implicit_integer_promotion, false);
+	{
+		uint32_t result_type = ops[0];
+		uint32_t result_id = ops[1];
+		uint32_t op0 = ops[2];
+		uint32_t op1 = ops[3];
+
+		auto &out_type = get<SPIRType>(result_type);
+
+		bool forward = should_forward(op0) && should_forward(op1);
+		string cast_op0, cast_op1;
+		auto expected_type = binary_op_bitcast_helper(cast_op0, cast_op1, int_type, op0, op1, false);
+
+		// Needs special handling.
+		auto expr = join(cast_op0, " - ", cast_op1, " * ", "(", cast_op0, " / ", cast_op1, ")");
+
+		if (implicit_integer_promotion)
+		{
+			expr = join(type_to_glsl(get<SPIRType>(result_type)), '(', expr, ')');
+		}
+		else if (out_type.basetype != int_type)
+		{
+			expected_type.basetype = int_type;
+			expr = join(bitcast_glsl_op(out_type, expected_type), '(', expr, ')');
+		}
+
+		emit_op(result_type, result_id, expr, forward);
+		inherit_expression_dependencies(result_id, op0);
+		inherit_expression_dependencies(result_id, op1);
 		break;
+	}
 
 	case OpSDiv:
 		GLSL_BOP_CAST(/, int_type);
@@ -13493,10 +13499,7 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		break;
 
 	case OpSMod:
-		if (backend.requires_emulated_smod)
-			emit_signed_remainder(ops[0], ops[1], ops[2], ops[3], int_type, implicit_integer_promotion, true);
-		else
-			GLSL_BOP_CAST(%, int_type);
+		GLSL_BOP_CAST(%, int_type);
 		break;
 
 	case OpFMod:
@@ -15112,6 +15115,8 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 	case OpGroupNonUniformLogicalXor:
 	case OpGroupNonUniformQuadSwap:
 	case OpGroupNonUniformQuadBroadcast:
+	case OpGroupNonUniformQuadAllKHR:
+	case OpGroupNonUniformQuadAnyKHR:
 	case OpGroupNonUniformRotateKHR:
 		emit_subgroup_op(instruction);
 		break;
