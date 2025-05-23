@@ -9126,7 +9126,7 @@ void CompilerMSL::fix_up_interpolant_access_chain(const uint32_t *ops, uint32_t 
 
 // If the physical type of a physical buffer pointer has been changed
 // to a ulong or ulongn vector, add a cast back to the pointer type.
-void CompilerMSL::check_physical_type_cast(std::string &expr, const SPIRType *type, uint32_t physical_type)
+bool CompilerMSL::check_physical_type_cast(std::string &expr, const SPIRType *type, uint32_t physical_type)
 {
 	auto *p_physical_type = maybe_get<SPIRType>(physical_type);
 	if (p_physical_type &&
@@ -9137,7 +9137,10 @@ void CompilerMSL::check_physical_type_cast(std::string &expr, const SPIRType *ty
 			expr += ".x";
 
 		expr = join("((", type_to_glsl(*type), ")", expr, ")");
+		return true;
 	}
+
+	return false;
 }
 
 // Override for MSL-specific syntax instructions
@@ -13687,7 +13690,6 @@ string CompilerMSL::get_type_address_space(const SPIRType &type, uint32_t id, bo
 		break;
 
 	case StorageClassStorageBuffer:
-	case StorageClassPhysicalStorageBuffer:
 	{
 		// For arguments from variable pointers, we use the write count deduction, so
 		// we should not assume any constness here. Only for global SSBOs.
@@ -13698,6 +13700,12 @@ string CompilerMSL::get_type_address_space(const SPIRType &type, uint32_t id, bo
 		addr_space = readonly ? "const device" : "device";
 		break;
 	}
+
+	case StorageClassPhysicalStorageBuffer:
+		// We cannot fully trust NonWritable coming from glslang due to a bug in buffer_reference handling.
+		// There isn't much gain in emitting const in C++ languages anyway.
+		addr_space = "device";
+		break;
 
 	case StorageClassUniform:
 	case StorageClassUniformConstant:
@@ -15411,7 +15419,8 @@ string CompilerMSL::argument_decl(const SPIRFunction::Parameter &arg)
 
 	bool constref = !arg.alias_global_variable && !passed_by_value && is_pointer(var_type) && arg.write_count == 0;
 	// Framebuffer fetch is plain value, const looks out of place, but it is not wrong.
-	if (type_is_msl_framebuffer_fetch(type))
+	// readonly coming from glslang is not reliable in all cases.
+	if (type_is_msl_framebuffer_fetch(type) || type_storage == StorageClassPhysicalStorageBuffer)
 		constref = false;
 	else if (type_storage == StorageClassUniformConstant)
 		constref = true;
