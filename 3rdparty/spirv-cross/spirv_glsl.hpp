@@ -428,6 +428,8 @@ protected:
 	                                                   const uint32_t *args, uint32_t count);
 	virtual void emit_spv_amd_gcn_shader_op(uint32_t result_type, uint32_t result_id, uint32_t op, const uint32_t *args,
 	                                        uint32_t count);
+	void emit_non_semantic_shader_debug_info(uint32_t result_type, uint32_t result_id, uint32_t op,
+	                                         const uint32_t *args, uint32_t count);
 	virtual void emit_header();
 	void emit_line_directive(uint32_t file_id, uint32_t line_literal);
 	void build_workgroup_size(SmallVector<std::string> &arguments, const SpecializationConstant &x,
@@ -664,6 +666,7 @@ protected:
 		bool workgroup_size_is_hidden = false;
 		bool requires_relaxed_precision_analysis = false;
 		bool implicit_c_integer_promotion_rules = false;
+		bool supports_spec_constant_array_size = true;
 	} backend;
 
 	void emit_struct(SPIRType &type);

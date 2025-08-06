@@ -1711,6 +1711,7 @@ string CompilerMSL::compile()
 	backend.array_is_value_type_in_buffer_blocks = false;
 	backend.support_pointer_to_pointer = true;
 	backend.implicit_c_integer_promotion_rules = true;
+	backend.supports_spec_constant_array_size = false;
 
 	capture_output_to_buffer = msl_options.capture_output_to_buffer;
 	is_rasterization_disabled = msl_options.disable_rasterization || capture_output_to_buffer;
@@ -11244,8 +11245,11 @@ void CompilerMSL::emit_glsl_op(uint32_t result_type, uint32_t id, uint32_t eop, 
 	case GLSLstd450Sinh:
 		if (restype.basetype == SPIRType::Half)
 		{
+			auto ftype = restype;
+			ftype.basetype = SPIRType::Float;
+
 			// MSL does not have overload for half. Force-cast back to half.
-			auto expr = join("half(fast::sinh(", to_unpacked_expression(args[0]), "))");
+			auto expr = join(type_to_glsl(restype), "(fast::sinh(", type_to_glsl(ftype), "(", to_unpacked_expression(args[0]), ")))");
 			emit_op(result_type, id, expr, should_forward(args[0]));
 			inherit_expression_dependencies(id, args[0]);
 		}
@@ -11255,8 +11259,11 @@ void CompilerMSL::emit_glsl_op(uint32_t result_type, uint32_t id, uint32_t eop, 
 	case GLSLstd450Cosh:
 		if (restype.basetype == SPIRType::Half)
 		{
+			auto ftype = restype;
+			ftype.basetype = SPIRType::Float;
+
 			// MSL does not have overload for half. Force-cast back to half.
-			auto expr = join("half(fast::cosh(", to_unpacked_expression(args[0]), "))");
+			auto expr = join(type_to_glsl(restype), "(fast::cosh(", type_to_glsl(ftype), "(", to_unpacked_expression(args[0]), ")))");
 			emit_op(result_type, id, expr, should_forward(args[0]));
 			inherit_expression_dependencies(id, args[0]);
 		}
@@ -11266,8 +11273,11 @@ void CompilerMSL::emit_glsl_op(uint32_t result_type, uint32_t id, uint32_t eop, 
 	case GLSLstd450Tanh:
 		if (restype.basetype == SPIRType::Half)
 		{
+			auto ftype = restype;
+			ftype.basetype = SPIRType::Float;
+
 			// MSL does not have overload for half. Force-cast back to half.
-			auto expr = join("half(fast::tanh(", to_unpacked_expression(args[0]), "))");
+			auto expr = join(type_to_glsl(restype), "(fast::tanh(", type_to_glsl(ftype), "(", to_unpacked_expression(args[0]), ")))");
 			emit_op(result_type, id, expr, should_forward(args[0]));
 			inherit_expression_dependencies(id, args[0]);
 		}
@@ -11278,7 +11288,13 @@ void CompilerMSL::emit_glsl_op(uint32_t result_type, uint32_t id, uint32_t eop, 
 		if (restype.basetype == SPIRType::Half)
 		{
 			// MSL does not have overload for half. Force-cast back to half.
-			auto expr = join("half(fast::atan2(", to_unpacked_expression(args[0]), ", ", to_unpacked_expression(args[1]), "))");
+			auto ftype = restype;
+			ftype.basetype = SPIRType::Float;
+
+			auto expr = join(type_to_glsl(restype),
+			                 "(fast::atan2(",
+			                 type_to_glsl(ftype), "(", to_unpacked_expression(args[0]), "), ",
+			                 type_to_glsl(ftype), "(", to_unpacked_expression(args[1]), ")))");
 			emit_op(result_type, id, expr, should_forward(args[0]) && should_forward(args[1]));
 			inherit_expression_dependencies(id, args[0]);
 			inherit_expression_dependencies(id, args[1]);
