@@ -8,6 +8,10 @@ set(SOURCE_FILES "glslcc.cpp"
 				 
 add_executable(glslcc ${SOURCE_FILES})
 
+target_link_directories(glslcc PRIVATE
+    "${CMAKE_SOURCE_DIR}/3rdparty/spirv-cross/external/glslang-build/output/lib"
+)
+
 target_link_libraries(glslcc PRIVATE 
         sx
         glslang 
