@@ -50,7 +50,6 @@
 #include "SPIRV/GlslangToSpv.h"
 #include "SPIRV/SpvTools.h"
 #include "SPIRV/disassemble.h"
-#include "SPIRV/spirv.hpp"
 
 #include "spirv_cross.hpp"
 #include "spirv_glsl.hpp"
