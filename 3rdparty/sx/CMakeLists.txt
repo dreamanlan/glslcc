@@ -173,7 +173,13 @@ if ((CMAKE_C_COMPILER_ID MATCHES "Clang") OR (CMAKE_C_COMPILER_ID MATCHES "GNU")
 elseif (MSVC) 
     sx_remove_compile_options(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" "/EHsc /GR")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR-")
+    
+    # Ensure we respect the parent project's runtime library setting
+    if (NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    endif()
 endif()
+
 
 add_library(sx ${SOURCE_FILES} ${INCLUDE_FILES} ${ASM_SOURCES})
 
@@ -197,6 +203,8 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 elseif (WIN32)
     target_link_libraries(sx PUBLIC psapi)
 endif()
+
+
 # Tests
 if (SX_BUILD_TESTS)
     add_subdirectory(tests)

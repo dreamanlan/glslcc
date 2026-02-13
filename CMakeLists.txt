@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.0)
+
+# Set policy to use CMAKE_MSVC_RUNTIME_LIBRARY BEFORE project()
+if (POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+
 project(glslcc)
+
 
 function(remove_compile_options DEST_VAR COMPILER_FLAGS FLAGS)
         separate_arguments(FLAGS)
@@ -42,16 +49,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if (MSVC)
+	# Force all projects to use the same runtime library
+	if (STATIC_LINK)
+		set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+	else()
+		set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+	endif()
+
 	remove_compile_options(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" "/GR")
 	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} /wd4530")
-	
-	if (STATIC_LINK)
-		remove_compile_options(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}" "/MD")
-		remove_compile_options(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}" "/MD")
-		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
-		set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
-	endif()
 endif()
+
+
 
 add_subdirectory(3rdparty/glslang)
 add_subdirectory(3rdparty/spirv-cross)
