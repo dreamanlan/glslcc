@@ -604,6 +604,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.tensorARM.params.comp",
         "spv.tensorARM.read.comp",
         "spv.tensorARM.size.comp",
+        "spv.tensorARM.unrequested_extension_types.comp",
     })),
     FileNameAsCustomTestSuffix
 );
@@ -1144,6 +1145,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.debuginfo.const_params.glsl.comp",
         "spv.debuginfo.scalar_types.glsl.frag",
         "spv.debuginfo.include.glsl.frag",
+        "spv.debuginfo.macro.include.glsl.frag",
         "spv.debuginfo.multiline.glsl.frag",
         "spv.debuginfo.implicit_br.glsl.frag",
         "spv.debuginfo.non_ascii.glsl.frag",
