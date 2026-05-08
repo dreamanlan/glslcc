@@ -186,6 +186,7 @@ const char* const E_GL_EXT_shader_image_load_formatted = "GL_EXT_shader_image_lo
 
 const char* const E_GL_EXT_shader_16bit_storage             = "GL_EXT_shader_16bit_storage";
 const char* const E_GL_EXT_shader_8bit_storage              = "GL_EXT_shader_8bit_storage";
+const char* const E_GL_EXT_abort                            = "GL_EXT_abort";
 
 
 // EXT extensions
@@ -280,6 +281,7 @@ const char* const E_GL_NV_shading_rate_image                    = "GL_NV_shading
 const char* const E_GL_NV_ray_tracing                           = "GL_NV_ray_tracing";
 const char* const E_GL_NV_ray_tracing_motion_blur               = "GL_NV_ray_tracing_motion_blur";
 const char* const E_GL_NV_fragment_shader_barycentric           = "GL_NV_fragment_shader_barycentric";
+const char* const E_GL_KHR_compute_shader_derivatives           = "GL_KHR_compute_shader_derivatives";
 const char* const E_GL_NV_compute_shader_derivatives            = "GL_NV_compute_shader_derivatives";
 const char* const E_GL_NV_shader_texture_footprint              = "GL_NV_shader_texture_footprint";
 const char* const E_GL_NV_mesh_shader                           = "GL_NV_mesh_shader";

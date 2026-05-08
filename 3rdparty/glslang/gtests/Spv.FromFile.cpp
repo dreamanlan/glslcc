@@ -385,6 +385,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.bufferhandle23.frag",
         "spv.bufferhandle24.frag",
         "spv.bufferhandle25.frag",
+        "spv.bufferhandle26.frag",
         "spv.bufferhandleRuntimeArray.frag",
         "spv.bufferhandleUvec2.frag",
         "spv.bufferhandle_Error.frag",
@@ -407,6 +408,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.depthUnchanged.frag",
         "spv.discard-dce.frag",
         "spv.doWhileLoop.frag",
+        "spv.derivative.float16.frag",
         "spv.earlyReturnDiscard.frag",
         "spv.expect_assume.assumeEXT.comp",
         "spv.expect_assume.expectEXT.comp",
@@ -557,6 +559,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.subgroupSizeARB.frag",
         "spv.precise.tese",
         "spv.precise.tesc",
+        "spv.precise.dot.vert",
         "spv.viewportindex.tese",
         "spv.volatileAtomic.comp",
         "spv.vulkan100.subgroupArithmetic.comp",
@@ -801,6 +804,8 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.WorkgroupMemoryExplicitLayout.std140.comp",
         "spv.WorkgroupMemoryExplicitLayout.std430.comp",
         "spv.WorkgroupMemoryExplicitLayout.scalar.comp",
+        "spv.khrComputeShaderDerivatives.comp",
+        "spv.khrComputeShaderDerivatives2.comp",
 
         // SPV_EXT_mesh_shader
         "spv.ext.meshShaderBuiltins.mesh",
@@ -813,6 +818,8 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.atomiAddEXT.task",
         "spv.460.subgroupEXT.task",
         "spv.460.subgroupEXT.mesh",
+        "spv.khrComputeShaderDerivatives.task",
+        "spv.khrComputeShaderDerivatives.mesh",
 
         // SPV_NV_shader_execution_reorder
 
@@ -863,8 +870,11 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.descriptorHeap.HeapStrideNotHeap.error.comp",
         "spv.descriptorHeap.HeapStrideNotPow2.error.comp",
         "spv.descriptorHeap.PushConstant.comp",
+        "spv.tensorARM.descriptorHeap.comp",
         "spv.descriptorHeap.valid.frag",
-
+        
+        // SPV_KHR_abort
+        "spv.shader.abort.comp",
     })),
     FileNameAsCustomTestSuffix
 );
@@ -963,6 +973,10 @@ INSTANTIATE_TEST_SUITE_P(
         "samplerlessTextureFunctions.frag",
         "spv.intrinsicsFakeEnable.vert",
         "spv.specConstArrayCheck.vert",
+        "spv.khrComputeShaderDerivativesMissingLayout.comp",
+        "spv.khrComputeShaderDerivativesNoLayout.comp",
+        "spv.khrComputeShaderDerivativesBoth.comp",
+        "spv.khrComputeShaderDerivativesBadSize.comp",
     })),
     FileNameAsCustomTestSuffix
 );
