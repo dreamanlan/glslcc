@@ -580,9 +580,18 @@ spv::Decoration TGlslangToSpvTraverser::TranslateNonUniformDecoration(const glsl
     if (qualifier.isNonUniform()) {
         builder.addIncorporatedExtension("SPV_EXT_descriptor_indexing", spv::Spv_1_5);
         builder.addCapability(spv::Capability::ShaderNonUniformEXT);
-        return spv::Decoration::NonUniformEXT;
-    } else
-        return spv::Decoration::Max;
+        
+        auto& extensions = glslangIntermediate->getRequestedExtensions();
+        if (extensions.find("GL_EXT_descriptor_heap") != extensions.end()) {
+            builder.addExtension("SPV_EXT_descriptor_heap");
+            builder.addCapability(spv::Capability::DescriptorHeapEXT);
+        }
+        else {
+            return spv::Decoration::NonUniformEXT;
+        }
+    }
+    
+    return spv::Decoration::Max;
 }
 
 // If lvalue flags contains nonUniform, return SPIR-V NonUniform decoration.
@@ -592,9 +601,18 @@ spv::Decoration TGlslangToSpvTraverser::TranslateNonUniformDecoration(
     if (coherentFlags.isNonUniform()) {
         builder.addIncorporatedExtension("SPV_EXT_descriptor_indexing", spv::Spv_1_5);
         builder.addCapability(spv::Capability::ShaderNonUniformEXT);
-        return spv::Decoration::NonUniformEXT;
-    } else
-        return spv::Decoration::Max;
+        
+        auto& extensions = glslangIntermediate->getRequestedExtensions();
+        if (extensions.find("GL_EXT_descriptor_heap") != extensions.end()) {
+            builder.addExtension("SPV_EXT_descriptor_heap");
+            builder.addCapability(spv::Capability::DescriptorHeapEXT);
+        }
+        else {
+            return spv::Decoration::NonUniformEXT;
+        }
+    }
+    
+    return spv::Decoration::Max;
 }
 
 spv::MemoryAccessMask TGlslangToSpvTraverser::TranslateMemoryAccess(
@@ -1534,8 +1552,9 @@ void TGlslangToSpvTraverser::TranslateLiterals(const glslang::TVector<const glsl
 // Add capabilities pertaining to how an array is indexed.
 void TGlslangToSpvTraverser::addIndirectionIndexCapabilities(const glslang::TType& baseType,
                                                              const glslang::TType& indexType)
-{
+{    
     if (indexType.getQualifier().isNonUniform()) {
+        
         // deal with an asserted non-uniform index
         // SPV_EXT_descriptor_indexing already added in TranslateNonUniformDecoration
         if (baseType.getBasicType() == glslang::EbtSampler) {
@@ -3179,37 +3198,20 @@ void TGlslangToSpvTraverser::createAbortEXT(const glslang::TIntermSequence &glsl
     builder.addExtension(spv::E_SPV_KHR_constant_data);
     builder.addExtension(spv::E_SPV_KHR_abort);
 
-    struct strInfo {
-        glslang::TString string;
-        int specifierIndex; // -1 if not a specifier.
-        strInfo(glslang::TString str, int spec) : string(str), specifierIndex(spec) {};
-    };
-
-    std::vector<strInfo> splitStr, tempSplitStr;
     const uint32_t formatSpecifiersSize = 4;
     const char* formatSpecifiers[formatSpecifiersSize] = {"%d", "%i", "%f", "%u"};
-    // 1. Split original message string with format specifiers.
+    // 1. Check whether message is empty or has format specifiers.
     const auto emptyMsg = glslang::TString("\0");
+    bool hasSpecifier = false;
     const glslang::TString* msg =
         isEmptyMsg ? &emptyMsg : glslangOperands[0]->getAsConstantUnion()->getConstArray()[0].getSConst();
-    splitStr.push_back(strInfo(*msg, -1));
-    for (uint32_t i = 0; i < formatSpecifiersSize; i++) {
-        for (uint32_t j = 0; j < splitStr.size(); j++) {
-            auto str = splitStr[j].string;
-            int specifierIndex = splitStr[j].specifierIndex;
-            auto pos = str.find(formatSpecifiers[i]);
-            while (pos != std::string::npos) {
-                tempSplitStr.push_back(strInfo(str.substr(0, pos), specifierIndex));
-                tempSplitStr.push_back(strInfo(glslang::TString(formatSpecifiers[i]), i));
-                str = str.substr(pos + strlen(formatSpecifiers[i]));
-                pos = str.find(formatSpecifiers[i]);
+    if (!isEmptyMsg) {
+        for (uint32_t i = 0; i < formatSpecifiersSize; i++) {
+            if (!msg->empty() && msg->find(formatSpecifiers[i]) != std::string::npos) {
+                hasSpecifier = true;
+                break;
             }
-            if (!str.empty() || isEmptyMsg)
-                tempSplitStr.push_back(strInfo(str, specifierIndex));
         }
-        splitStr.clear();
-        splitStr = tempSplitStr;
-        tempSplitStr.clear();
     }
     // 2. Prepare to construct message struct variable, record members' types, data and offsets.
     std::vector<int> structMemberOffsets;
@@ -3218,33 +3220,30 @@ void TGlslangToSpvTraverser::createAbortEXT(const glslang::TIntermSequence &glsl
     std::vector<spv::Id> structMemberData;
     structMemberOffsets.push_back(0);
     auto charType = builder.makeIntType(8);
-    for (auto elem : splitStr) {
-        // 2.1 get sub string's length (if specifier, be spec const).
-        //     If not an empty string, \0 is the final character.
-        unsigned int strElemLen = isEmptyMsg ? 1 : elem.string.size() + 1;
-        unsigned int paddingSize = (4 - strElemLen % 4) % 4;
-        strElemLen = strElemLen + paddingSize;
-        spv::Id constLen = builder.makeUintConstant(strElemLen);
-        spv::Op constDataOp = spv::Op::OpConstantDataKHR;
-        if (elem.specifierIndex >= 0) {
-            constLen = builder.makeUintConstant(strElemLen, true);
-            constDataOp = spv::Op::OpSpecConstantDataKHR;
-        }
-        // 2.2 get sub string's array type (if specifier, be spec const).
-        auto strElemArrType = builder.makeArrayType(charType, constLen, 1);
-        auto strElemLoadArrType = builder.makeArrayType(charType, constLen, 1);
-        // 2.3 add sub string constant data
-        auto strElemConstData = builder.createConstData(constDataOp, strElemArrType, {elem.string.c_str()});
-        // 2.4 add decoration for those sub string.
-        builder.addDecoration(strElemArrType, spv::Decoration::UTFEncodedKHR);
-        builder.addDecoration(strElemLoadArrType, spv::Decoration::UTFEncodedKHR);
-        // 2.5 Collect data and type for construct an internal message structure member.
-        structMemberType.push_back(strElemArrType);
-        structLoadMemberType.push_back(strElemLoadArrType);
-        structMemberOffsets.push_back(structMemberOffsets.back() + strElemLen);
-        structMemberData.push_back(strElemConstData);
+    // 2.1 Get string's length (if has specifier, be spec const).
+    //     If not an empty string, \0 is the final character used for padding.
+    unsigned int msgLen = isEmptyMsg ? 1 : msg->size() + 1;
+    unsigned int paddingSize = (4 - msgLen % 4) % 4;
+    msgLen = msgLen + paddingSize;
+    spv::Id constLen = builder.makeUintConstant(msgLen);
+    spv::Op constDataOp = spv::Op::OpConstantDataKHR;
+    if (hasSpecifier) {
+        constLen = builder.makeUintConstant(msgLen, true);
+        constDataOp = spv::Op::OpSpecConstantDataKHR;
     }
-    structMemberOffsets.pop_back();
+    // 2.2 Get string's array type (if specifier, be spec const).
+    auto msgArrType = builder.makeArrayType(charType, constLen, 1);
+    auto msgLoadArrType = builder.makeArrayType(charType, constLen, 1);
+    // 2.3 Add string constant data
+    auto msgConstData = builder.createConstData(constDataOp, msgArrType, {msg->c_str()});
+    // 2.4 Add decoration for this string.
+    builder.addDecoration(msgArrType, spv::Decoration::UTFEncodedKHR);
+    builder.addDecoration(msgLoadArrType, spv::Decoration::UTFEncodedKHR);
+    // 2.5 Collect data and type for construct an internal message structure member.
+    structMemberType.push_back(msgArrType);
+    structLoadMemberType.push_back(msgLoadArrType);
+    structMemberOffsets.push_back(msgLen);
+    structMemberData.push_back(msgConstData);
     // 3. Add extra following arguments/variables' types in member structure.
     for (unsigned int i = 1; i < glslangOperands.size(); i++) {
         spv::Builder::AccessChain save = builder.getAccessChain();
@@ -3259,6 +3258,7 @@ void TGlslangToSpvTraverser::createAbortEXT(const glslang::TIntermSequence &glsl
 
         builder.setAccessChain(save);
     }
+    structMemberOffsets.pop_back();
     // 4. Construct struct message variable, add abortExt instruction.
     auto structLoadType = builder.makeStructType(structLoadMemberType, {}, "abortMessageLoadType");
     for (unsigned int i = 0; i < structMemberOffsets.size(); i++)
@@ -3613,7 +3613,10 @@ bool TGlslangToSpvTraverser::visitAggregate(glslang::TVisit visit, glslang::TInt
             constructed = builder.createConstructor(precision, arguments, resultType());
 
         if (node->getType().getQualifier().isNonUniform()) {
-            builder.addDecoration(constructed, spv::Decoration::NonUniformEXT);
+            auto& extensions = glslangIntermediate->getRequestedExtensions();
+            if (extensions.find("GL_EXT_descriptor_heap") == extensions.end()) {
+                builder.addDecoration(constructed, spv::Decoration::NonUniformEXT);
+            }
         }
 
         builder.clearAccessChain();
@@ -7304,7 +7307,10 @@ spv::Id TGlslangToSpvTraverser::createImageTextureFunctionCall(glslang::TIntermO
         ((cracked.query && node->getOp() != glslang::EOpTextureQueryLod) || cracked.fragMask || cracked.fetch)) {
         params.sampler = builder.createUnaryOp(spv::Op::OpImage, builder.getImageType(params.sampler), params.sampler);
         if (imageType.getQualifier().isNonUniform()) {
-            builder.addDecoration(params.sampler, spv::Decoration::NonUniformEXT);
+            auto& extensions = glslangIntermediate->getRequestedExtensions();
+            if (extensions.find("GL_EXT_descriptor_heap") == extensions.end()) {
+                builder.addDecoration(params.sampler, spv::Decoration::NonUniformEXT);
+            }
         }
     }
     // Check for queries
@@ -7565,8 +7571,11 @@ spv::Id TGlslangToSpvTraverser::createImageTextureFunctionCall(glslang::TIntermO
             }
 
             spv::Id pointer = builder.createOp(imgTexelOp, resultTypeId, operands);
-            if (imageType.getQualifier().nonUniform) {
-                builder.addDecoration(pointer, spv::Decoration::NonUniformEXT);
+            if (imageType.getQualifier().nonUniform) { 
+                auto& extensions = glslangIntermediate->getRequestedExtensions();
+                if (extensions.find("GL_EXT_descriptor_heap") == extensions.end()) {
+                    builder.addDecoration(pointer, spv::Decoration::NonUniformEXT);
+                }
             }
 
             std::vector<spv::Id> operands;
