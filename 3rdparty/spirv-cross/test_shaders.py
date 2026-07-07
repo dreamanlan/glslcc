@@ -379,6 +379,8 @@ def cross_compile_msl(shader, spirv, opt, iterations, paths):
         msl_args.append('--msl-check-discarded-frag-stores')
     if '.force-frag-with-side-effects-execution.' in shader:
         msl_args.append('--msl-force-frag-with-side-effects-execution')
+    if '.emulate-reversed-depth-viewport.' in shader:
+        msl_args.append('--msl-emulate-reversed-depth-viewport')
     if '.lod-as-grad.' in shader:
         msl_args.append('--msl-sample-dref-lod-array-as-grad')
     if '.agx-cube-grad.' in shader:
@@ -513,6 +515,8 @@ def shader_to_sm(shader):
         return '60'
     elif '.sm68.' in shader:
         return '68'
+    elif '.sm64.' in shader:
+        return '64'
     elif '.sm51.' in shader:
         return '51'
     elif '.sm30.' in shader:
