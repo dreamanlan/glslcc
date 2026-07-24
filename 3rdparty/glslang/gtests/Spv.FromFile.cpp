@@ -315,6 +315,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.for-nobody.vert",
         "spv.while-continue-break.vert",
         "spv.while-simple.vert",
+        "spv.pragma.stdgl.oob.vert",
         // vulkan-specific tests
         "rayQuery.rgen",
         "rayQuery-no-cse.rgen",
@@ -450,6 +451,8 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.fsi_Error.frag",
         "spv.fullyCovered.frag",
         "spv.functionCall.frag",
+        "spv.functionControlAttributes.frag",
+        "spv.functionControlAttributes.error.frag",
         "spv.functionNestedOpaque.vert",
         "spv.functionSemantics.frag",
         "spv.functionParameterTypes.frag",
