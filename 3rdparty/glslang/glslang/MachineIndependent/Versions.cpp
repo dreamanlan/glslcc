@@ -338,8 +338,10 @@ void TParseVersions::initializeExtensionBehavior()
     // QCOM
     extensionBehavior[E_GL_QCOM_image_processing]                    = EBhDisable;
     extensionBehavior[E_GL_QCOM_image_processing2]                   = EBhDisable;
+    extensionBehavior[E_GL_QCOM_image_processing3]                   = EBhDisable;
     extensionBehavior[E_GL_QCOM_tile_shading]                        = EBhDisable;
     extensionBehavior[E_GL_QCOM_cooperative_matrix_conversion]       = EBhDisable;
+    extensionBehavior[E_GL_QCOM_multiple_wait_queues]                = EBhDisable;
 
     // AEP
     extensionBehavior[E_GL_ANDROID_extension_pack_es31a]             = EBhDisable;
@@ -496,8 +498,10 @@ void TParseVersions::getPreamble(std::string& preamble)
 
             "#define GL_QCOM_image_processing 1\n"
             "#define GL_QCOM_image_processing2 1\n"
+            "#define GL_QCOM_image_processing3 1\n"
             "#define GL_QCOM_tile_shading 1\n"
             "#define GL_QCOM_cooperative_matrix_conversion 1\n"
+            "#define GL_QCOM_multiple_wait_queues 1\n"
             ;
 
             if (version >= 300) {
@@ -634,8 +638,10 @@ void TParseVersions::getPreamble(std::string& preamble)
 
             "#define GL_QCOM_image_processing 1\n"
             "#define GL_QCOM_image_processing2 1\n"
+            "#define GL_QCOM_image_processing3 1\n"
             "#define GL_QCOM_tile_shading 1\n"
             "#define GL_QCOM_cooperative_matrix_conversion 1\n"
+            "#define GL_QCOM_multiple_wait_queues 1\n"
 
             "#define GL_EXT_shader_explicit_arithmetic_types 1\n"
             "#define GL_EXT_shader_explicit_arithmetic_types_int8 1\n"

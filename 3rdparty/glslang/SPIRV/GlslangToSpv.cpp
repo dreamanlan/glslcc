@@ -1479,6 +1479,10 @@ spv::LoopControlMask TGlslangToSpvTraverser::TranslateLoopControl(const glslang:
             operands.push_back(loopNode.getPartialCount());
         }
     }
+    if (loopNode.getMultipleWaitQueuesQCOM() != loopNode.noMultipleQaitQueues) {
+        control = control | spv::LoopControlMask::MultipleWaitQueuesQCOM;
+        operands.push_back(loopNode.getMultipleWaitQueuesQCOM());
+    }
 
     return control;
 }
@@ -8383,6 +8387,40 @@ spv::Id TGlslangToSpvTraverser::createImageTextureFunctionCall(glslang::TIntermO
                                     builder.getScalarTypeId(builder.getTypeId(params.coords)), projSourceComp);
             params.coords = builder.createCompositeInsert(projComp, params.coords,
                                     builder.getTypeId(params.coords), projTargetComp);
+        }
+    }
+
+    if (cracked.gather) {
+        spv::GatherModes mode = spv::GatherModes::Max;
+        switch (node->getOp()) {
+        case glslang::EOpTextureGather4x1QCOM:
+        case glslang::EOpTextureGather4x1OffsetQCOM:
+            mode = spv::GatherModes::Gather4x1QCOM;
+            break;
+        case glslang::EOpTextureGatherDQCOM:
+        case glslang::EOpTextureGatherDOffsetQCOM:
+            mode = spv::GatherModes::GatherDQCOM;
+            break;
+        case glslang::EOpTextureGatherH2QCOM:
+        case glslang::EOpTextureGatherH2OffsetQCOM:
+            mode = spv::GatherModes::GatherH2QCOM;
+            break;
+        case glslang::EOpTextureGatherV2QCOM:
+        case glslang::EOpTextureGatherV2OffsetQCOM:
+            mode = spv::GatherModes::GatherV2QCOM;
+            break;
+        default:
+            break;
+        }
+
+        if (mode != spv::GatherModes::Max) {
+          if (mode == spv::GatherModes::Gather4x1QCOM) {
+            builder.addCapability(spv::Capability::ImageGatherLinearQCOM);
+          } else {
+            builder.addCapability(spv::Capability::ImageGatherExtendedModesQCOM);
+          }
+          builder.addExtension(spv::E_SPV_QCOM_image_processing3);
+          params.gatherMode = builder.makeIntConstant(unsigned(mode));
         }
     }
 

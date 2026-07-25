@@ -781,6 +781,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.atomicAdd.bufferReference.comp",
         "spv.nontemporalbuffer.frag",
         "spv.atomicFloat.comp",
+        "spv.qcom.multiple_wait_queues.comp",
     })),
     FileNameAsCustomTestSuffix
 );
@@ -1113,6 +1114,10 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.tpipBlockMatchGatherSSD.frag",
         "spv.tpipBlockMatchWindowSAD.frag",
         "spv.tpipBlockMatchWindowSSD.frag",
+        "spv.qcom.textureGather.vert",
+        "spv.qcom.textureGather.frag",
+        "spv.qcom.es.textureGather.vert",
+        "spv.qcom.es.textureGather.frag",
 })),
 FileNameAsCustomTestSuffix
 );
@@ -1252,6 +1257,7 @@ INSTANTIATE_TEST_SUITE_P(
     FileNameAsCustomTestSuffix
 );
 // clang-format on
+
 
 }  // anonymous namespace
 }  // namespace glslangtest

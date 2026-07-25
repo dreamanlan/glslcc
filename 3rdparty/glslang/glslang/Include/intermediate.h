@@ -782,6 +782,18 @@ enum TOperator {
     EOpFragmentMaskFetch,
     EOpFragmentFetch,
 
+    // QCOM Image processing3
+    EOpTextureGatherExtendedGuardBegin,
+    EOpTextureGather4x1QCOM,
+    EOpTextureGatherV2QCOM,
+    EOpTextureGatherH2QCOM,
+    EOpTextureGatherDQCOM,
+    EOpTextureGather4x1OffsetQCOM,
+    EOpTextureGatherV2OffsetQCOM,
+    EOpTextureGatherH2OffsetQCOM,
+    EOpTextureGatherDOffsetQCOM,
+    EOpTextureGatherExtendedGuardEnd,
+
     EOpSparseTextureGuardBegin,
 
     EOpSparseTexture,
@@ -1272,7 +1284,8 @@ public:
         maxIterations(iterationsInfinite),
         iterationMultiple(1),
         peelCount(0),
-        partialCount(0)
+        partialCount(0),
+        multipleWaitQueuesQCOM(noMultipleQaitQueues)
     { }
 
     virtual       TIntermLoop* getAsLoopNode() { return this; }
@@ -1324,6 +1337,12 @@ public:
     }
     unsigned int getPartialCount() const { return partialCount; }
 
+    static const unsigned int noMultipleQaitQueues = 0xFFFFFFFF;
+    void setMultipleWaitQueuesQCOM(unsigned int numQ) {
+        multipleWaitQueuesQCOM = numQ;
+    }
+    unsigned int getMultipleWaitQueuesQCOM() const { return multipleWaitQueuesQCOM; }
+
 protected:
     TIntermNode* body;       // code to loop over
     TIntermNode* test;       // exit condition associated with loop, could be 0 for 'for' loops
@@ -1337,6 +1356,7 @@ protected:
     unsigned int iterationMultiple;  // as per the SPIR-V specification
     unsigned int peelCount;          // as per the SPIR-V specification
     unsigned int partialCount;       // as per the SPIR-V specification
+    unsigned int multipleWaitQueuesQCOM;
 };
 
 //
@@ -1481,7 +1501,10 @@ public:
     bool isImageFootprint() const { return op > EOpImageFootprintGuardBegin && op < EOpImageFootprintGuardEnd; }
     bool isSparseImage()   const { return op == EOpSparseImageLoad; }
     bool isSubgroup() const { return op > EOpSubgroupGuardStart && op < EOpSubgroupGuardStop; }
-
+    bool isTextureGatherExtended() const
+    {
+      return op > EOpTextureGatherExtendedGuardBegin && op < EOpTextureGatherExtendedGuardEnd;
+    }
     void setOperationPrecision(TPrecisionQualifier p) { operationPrecision = p; }
     TPrecisionQualifier getOperationPrecision() const { return operationPrecision != EpqNone ?
                                                                                      operationPrecision :
@@ -1608,6 +1631,17 @@ public:
             break;
         case EOpTextureGather:
         case EOpSparseTextureGather:
+        case EOpTextureGather4x1QCOM:
+        case EOpTextureGatherV2QCOM:
+        case EOpTextureGatherH2QCOM:
+        case EOpTextureGatherDQCOM:
+            cracked.gather = true;
+            break;
+        case EOpTextureGather4x1OffsetQCOM:
+        case EOpTextureGatherV2OffsetQCOM:
+        case EOpTextureGatherH2OffsetQCOM:
+        case EOpTextureGatherDOffsetQCOM:
+            cracked.offset = true;
             cracked.gather = true;
             break;
         case EOpTextureGatherOffset:
