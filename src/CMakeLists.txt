@@ -8,13 +8,17 @@ set(SOURCE_FILES "glslcc.cpp"
 				 
 add_executable(glslcc ${SOURCE_FILES})
 
+set(GLSLCC_GLSLANG_LEGACY_TARGETS)
+foreach(GLSLANG_LEGACY_TARGET OGLCompiler OSDependent SPIRV SPVRemapper)
+    if(TARGET ${GLSLANG_LEGACY_TARGET})
+        list(APPEND GLSLCC_GLSLANG_LEGACY_TARGETS ${GLSLANG_LEGACY_TARGET})
+    endif()
+endforeach()
+
 target_link_libraries(glslcc PRIVATE 
         sx
         glslang 
-        OGLCompiler 
-        OSDependent 
-        SPIRV 
-        SPVRemapper 
+        ${GLSLCC_GLSLANG_LEGACY_TARGETS}
         spirv-cross-core 
         spirv-cross-cpp 
         spirv-cross-glsl 

@@ -1,4 +1,5 @@
-# Copyright 2016-2020 Google Inc.
+# Copyright 2016-2021 Google Inc.
+# SPDX-License-Identifier: Apache-2.0 OR MIT
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +13,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 2.8)
+#
+# At your option, you may choose to accept this material under either:
+#  1. The Apache License, Version 2.0, found at <http://www.apache.org/licenses/LICENSE-2.0>, or
+#  2. The MIT License, found at <http://opensource.org/licenses/MIT>.
+#
+
+cmake_minimum_required(VERSION 3.10)
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Avoid a warning if parent project sets VERSION in project().
 if (${CMAKE_VERSION} VERSION_GREATER "3.0.1")
 	cmake_policy(SET CMP0048 NEW)
 endif()
+
+# Avoid error on Android NDK 27+'s CMake files
+cmake_policy(SET CMP0057 NEW)
 
 project(SPIRV-Cross LANGUAGES CXX C)
 enable_testing()
@@ -45,6 +56,7 @@ option(SPIRV_CROSS_SANITIZE_THREADS "Sanitize threads" OFF)
 option(SPIRV_CROSS_SANITIZE_UNDEFINED "Sanitize undefined" OFF)
 
 option(SPIRV_CROSS_NAMESPACE_OVERRIDE "" "Override the namespace used in the C++ API.")
+option(SPIRV_CROSS_SPV_HEADER_NAMESPACE_OVERRIDE "" "Override the namespace used by spirv.hpp (to workaround conflicts).")
 option(SPIRV_CROSS_FORCE_STL_TYPES "Force use of STL types instead of STL replacements in certain places. Might reduce performance." OFF)
 
 option(SPIRV_CROSS_SKIP_INSTALL "Skips installation targets." OFF)
@@ -69,7 +81,7 @@ set(spirv-cross-build-version "unknown")
 find_package(Git)
 if (GIT_FOUND)
 	execute_process(
-		COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+		COMMAND ${GIT_EXECUTABLE} describe --always --tags --dirty=+
 		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 		OUTPUT_VARIABLE spirv-cross-build-version
 		ERROR_QUIET
@@ -133,7 +145,8 @@ if (CMAKE_COMPILER_IS_GNUCXX OR ((${CMAKE_CXX_COMPILER_ID} MATCHES "Clang") AND 
 		set(spirv-cross-link-flags "${spirv-cross-link-flags} -fsanitize=thread")
 	endif()
 elseif (MSVC)
-	set(spirv-compiler-options ${spirv-compiler-options} /wd4267 /wd4996)
+	# AppVeyor spuriously fails in debug build on older MSVC without /bigobj.
+	set(spirv-compiler-options ${spirv-compiler-options} /wd4267 /wd4996 $<$<CONFIG:DEBUG>:/bigobj>)
 endif()
 
 macro(extract_headers out_abs file_list)
@@ -173,6 +186,14 @@ macro(spirv_cross_add_library name config_name library_type)
 			target_compile_definitions(${name} PUBLIC SPIRV_CROSS_NAMESPACE_OVERRIDE=${SPIRV_CROSS_NAMESPACE_OVERRIDE})
 		else()
 			target_compile_definitions(${name} PRIVATE SPIRV_CROSS_NAMESPACE_OVERRIDE=${SPIRV_CROSS_NAMESPACE_OVERRIDE})
+		endif()
+	endif()
+
+	if (SPIRV_CROSS_SPV_HEADER_NAMESPACE_OVERRIDE)
+		if (${library_type} MATCHES "STATIC")
+			target_compile_definitions(${name} PUBLIC SPIRV_CROSS_SPV_HEADER_NAMESPACE_OVERRIDE=${SPIRV_CROSS_SPV_HEADER_NAMESPACE_OVERRIDE})
+		else()
+			target_compile_definitions(${name} PRIVATE SPIRV_CROSS_SPV_HEADER_NAMESPACE_OVERRIDE=${SPIRV_CROSS_SPV_HEADER_NAMESPACE_OVERRIDE})
 		endif()
 	endif()
 
@@ -233,7 +254,19 @@ set(spirv-cross-util-sources
 		${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross_util.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/spirv_cross_util.hpp)
 
+set(spirv-cross-abi-major 0)
+set(spirv-cross-abi-minor 68)
+set(spirv-cross-abi-patch 0)
+set(SPIRV_CROSS_VERSION ${spirv-cross-abi-major}.${spirv-cross-abi-minor}.${spirv-cross-abi-patch})
+
 if (SPIRV_CROSS_STATIC)
+	if (NOT SPIRV_CROSS_SKIP_INSTALL)
+		configure_file(
+			${CMAKE_CURRENT_SOURCE_DIR}/pkg-config/spirv-cross-c.pc.in
+			${CMAKE_CURRENT_BINARY_DIR}/spirv-cross-c.pc @ONLY)
+		install(FILES ${CMAKE_CURRENT_BINARY_DIR}/spirv-cross-c.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+	endif()
+
 	spirv_cross_add_library(spirv-cross-core spirv_cross_core STATIC
 			${spirv-cross-core-sources})
 
@@ -322,13 +355,7 @@ if (SPIRV_CROSS_STATIC)
 	endif()
 endif()
 
-set(spirv-cross-abi-major 0)
-set(spirv-cross-abi-minor 39)
-set(spirv-cross-abi-patch 0)
-
 if (SPIRV_CROSS_SHARED)
-	set(SPIRV_CROSS_VERSION ${spirv-cross-abi-major}.${spirv-cross-abi-minor}.${spirv-cross-abi-patch})
-
 	if (NOT SPIRV_CROSS_SKIP_INSTALL)
 		configure_file(
 			${CMAKE_CURRENT_SOURCE_DIR}/pkg-config/spirv-cross-c-shared.pc.in
@@ -433,7 +460,7 @@ if (SPIRV_CROSS_CLI)
 	target_compile_definitions(spirv-cross PRIVATE ${spirv-compiler-defines} HAVE_SPIRV_CROSS_GIT_VERSION)
 	set_target_properties(spirv-cross PROPERTIES LINK_FLAGS "${spirv-cross-link-flags}")
 	if (NOT SPIRV_CROSS_SKIP_INSTALL)
-		install(TARGETS spirv-cross RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+		install(TARGETS spirv-cross DESTINATION ${CMAKE_INSTALL_BINDIR})
 	endif()
 	target_link_libraries(spirv-cross PRIVATE
 			spirv-cross-glsl
@@ -450,7 +477,19 @@ if (SPIRV_CROSS_CLI)
 		#  - Update the reference files
 		#  - Get cycle counts from malisc
 		#  - Keep failing outputs
-		find_package(PythonInterp)
+		if (${CMAKE_VERSION} VERSION_GREATER "3.12")
+			find_package(Python3)
+			if (${PYTHON3_FOUND})
+				set(PYTHONINTERP_FOUND ON)
+				set(PYTHON_VERSION_MAJOR 3)
+				set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+			else()
+				set(PYTHONINTERP_FOUND OFF)
+			endif()
+		else()
+			find_package(PythonInterp)
+		endif()
+
 		find_program(spirv-cross-glslang NAMES glslangValidator
 				PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/glslang-build/output/bin
 				NO_DEFAULT_PATH)
@@ -512,6 +551,14 @@ if (SPIRV_CROSS_CLI)
 				target_link_libraries(spirv-cross-typed-id-test spirv-cross-core)
 				set_target_properties(spirv-cross-typed-id-test PROPERTIES LINK_FLAGS "${spirv-cross-link-flags}")
 
+				add_executable(spirv-cross-debug-lines-test tests-other/debug-lines.cpp)
+				target_link_libraries(spirv-cross-debug-lines-test spirv-cross-core)
+				set_target_properties(spirv-cross-debug-lines-test PROPERTIES LINK_FLAGS "${spirv-cross-link-flags}")
+
+				add_executable(spirv-cross-debug-info-test tests-other/debug-info.cpp)
+				target_link_libraries(spirv-cross-debug-info-test spirv-cross-core)
+				set_target_properties(spirv-cross-debug-info-test PROPERTIES LINK_FLAGS "${spirv-cross-link-flags}")
+
 				if (CMAKE_COMPILER_IS_GNUCXX OR (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"))
 					target_compile_options(spirv-cross-c-api-test PRIVATE -std=c89 -Wall -Wextra)
 				endif()
@@ -534,6 +581,10 @@ if (SPIRV_CROSS_CLI)
 						COMMAND $<TARGET_FILE:spirv-cross-msl-ycbcr-conversion-test> ${CMAKE_CURRENT_SOURCE_DIR}/tests-other/msl_ycbcr_conversion_test_2.spv)
 				add_test(NAME spirv-cross-typed-id-test
 						COMMAND $<TARGET_FILE:spirv-cross-typed-id-test>)
+				add_test(NAME spirv-cross-debug-lines-test
+						COMMAND $<TARGET_FILE:spirv-cross-debug-lines-test> ${CMAKE_CURRENT_SOURCE_DIR}/tests-other/debug-lines.spv)
+				add_test(NAME spirv-cross-debug-info-test
+						COMMAND $<TARGET_FILE:spirv-cross-debug-info-test> ${CMAKE_CURRENT_SOURCE_DIR}/tests-other/debug-info.spv)
 				add_test(NAME spirv-cross-test
 						COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_shaders.py --parallel
 						${spirv-cross-externals}

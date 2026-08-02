@@ -2,7 +2,8 @@
 // Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
 // Copyright (C) 2012-2013 LunarG, Inc.
 // Copyright (C) 2017 ARM Limited.
-// Copyright (C) 2015-2018 Google, Inc.
+// Copyright (C) 2015-2019 Google, Inc.
+// Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
 //
 // All rights reserved.
 //
@@ -35,31 +36,6 @@
 // ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-
-//
-// Do not edit the .y file, only edit the .m4 file.
-// The .y bison file is not a source file, it is a derivitive of the .m4 file.
-// The m4 file needs to be processed by m4 to generate the .y bison file.
-//
-// Code sandwiched between a pair:
-//
-//    GLSLANG_WEB_EXCLUDE_ON
-//      ...
-//      ...
-//      ...
-//    GLSLANG_WEB_EXCLUDE_OFF
-//
-// Will be exluded from the grammar when m4 is executed as:
-//
-//    m4 -P -DGLSLANG_WEB
-//
-// It will be included when m4 is executed as:
-//
-//    m4 -P
-//
-
-
-
 
 /**
  * This is bison grammar and productions for parsing all versions of the
@@ -115,6 +91,9 @@ using namespace glslang;
             glslang::TIntermNodePair nodePair;
             glslang::TIntermTyped* intermTypedNode;
             glslang::TAttributes* attributes;
+            glslang::TSpirvRequirement* spirvReq;
+            glslang::TSpirvInstruction* spirvInst;
+            glslang::TSpirvTypeParameters* spirvTypeParams;
         };
         union {
             glslang::TPublicType type;
@@ -125,18 +104,11 @@ using namespace glslang;
             glslang::TArraySizes* arraySizes;
             glslang::TIdentifierList* identifierList;
         };
-        glslang::TArraySizes* typeParameters;
+        glslang::TTypeParameters* typeParameters;
     } interm;
 }
 
 %{
-
-/* windows only pragma */
-#ifdef _MSC_VER
-    #pragma warning(disable : 4065)
-    #pragma warning(disable : 4127)
-    #pragma warning(disable : 4244)
-#endif
 
 #define parseContext (*pParseContext)
 #define yyerror(context, msg) context->parserError(msg)
@@ -147,7 +119,7 @@ extern int yylex(YYSTYPE*, TParseContext&);
 
 %parse-param {glslang::TParseContext* pParseContext}
 %lex-param {parseContext}
-%pure-parser  // enable thread safety
+%define api.pure  // enable thread safety
 %expect 1     // One shift reduce conflict because of if | else
 
 %token <lex> CONST BOOL INT UINT FLOAT
@@ -166,13 +138,15 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %token <lex> SAMPLER2DARRAYSHADOW ISAMPLER2D ISAMPLER3D ISAMPLERCUBE
 %token <lex> ISAMPLER2DARRAY USAMPLER2D USAMPLER3D
 %token <lex> USAMPLERCUBE USAMPLER2DARRAY
-%token <lex> SAMPLERCUBEARRAY SAMPLERCUBEARRAYSHADOW
-%token <lex> ISAMPLERCUBEARRAY USAMPLERCUBEARRAY
 
-
+// separate image/sampler
+%token <lex> SAMPLER SAMPLERSHADOW
+%token <lex>  TEXTURE2D  TEXTURE3D  TEXTURECUBE  TEXTURE2DARRAY
+%token <lex> ITEXTURE2D ITEXTURE3D ITEXTURECUBE ITEXTURE2DARRAY
+%token <lex> UTEXTURE2D UTEXTURE3D UTEXTURECUBE UTEXTURE2DARRAY
 
 %token <lex> ATTRIBUTE VARYING
-%token <lex> FLOAT16_T FLOAT32_T DOUBLE FLOAT64_T
+%token <lex> FLOATE5M2_T FLOATE4M3_T BFLOAT16_T FLOAT16_T FLOAT32_T DOUBLE FLOAT64_T FLOATE2M1_T FLOATE3M2_T FLOATE2M3_T FLOATUE8M0_T FLOATMXINT8_T
 %token <lex> INT64_T UINT64_T INT32_T UINT32_T INT16_T UINT16_T INT8_T UINT8_T
 %token <lex> I64VEC2 I64VEC3 I64VEC4
 %token <lex> U64VEC2 U64VEC3 U64VEC4
@@ -183,6 +157,14 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %token <lex> I8VEC2  I8VEC3  I8VEC4
 %token <lex> U8VEC2  U8VEC3  U8VEC4
 %token <lex> DVEC2 DVEC3 DVEC4 DMAT2 DMAT3 DMAT4
+%token <lex> BF16VEC2 BF16VEC3 BF16VEC4
+%token <lex> FE5M2VEC2 FE5M2VEC3 FE5M2VEC4
+%token <lex> FE4M3VEC2 FE4M3VEC3 FE4M3VEC4
+%token <lex> FE2M1VEC2 FE2M1VEC3 FE2M1VEC4
+%token <lex> FE3M2VEC2 FE3M2VEC3 FE3M2VEC4
+%token <lex> FE2M3VEC2 FE2M3VEC3 FE2M3VEC4
+%token <lex> FUE8M0VEC2 FUE8M0VEC3 FUE8M0VEC4
+%token <lex> FMXINT8VEC2 FMXINT8VEC3 FMXINT8VEC4
 %token <lex> F16VEC2 F16VEC3 F16VEC4 F16MAT2 F16MAT3 F16MAT4
 %token <lex> F32VEC2 F32VEC3 F32VEC4 F32MAT2 F32MAT3 F32MAT4
 %token <lex> F64VEC2 F64VEC3 F64VEC4 F64MAT2 F64MAT3 F64MAT4
@@ -200,9 +182,19 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %token <lex> F64MAT4X2 F64MAT4X3 F64MAT4X4
 %token <lex> ATOMIC_UINT
 %token <lex> ACCSTRUCTNV
+%token <lex> ACCSTRUCTEXT
+%token <lex> RAYQUERYEXT
 %token <lex> FCOOPMATNV ICOOPMATNV UCOOPMATNV
+%token <lex> COOPMAT
+%token <lex> COOPVECNV
+%token <lex> VECTOR
+%token <lex> HITOBJECTNV HITOBJECTATTRNV HITOBJECTEXT HITOBJECTATTREXT
+%token <lex> TENSORLAYOUTNV TENSORVIEWNV
+%token <lex> TENSORARM
 
 // combined image/sampler
+%token <lex> SAMPLERCUBEARRAY SAMPLERCUBEARRAYSHADOW
+%token <lex> ISAMPLERCUBEARRAY USAMPLERCUBEARRAY
 %token <lex> SAMPLER1D SAMPLER1DARRAY SAMPLER1DARRAYSHADOW ISAMPLER1D SAMPLER1DSHADOW
 %token <lex> SAMPLER2DRECT SAMPLER2DRECTSHADOW ISAMPLER2DRECT USAMPLER2DRECT
 %token <lex> SAMPLERBUFFER ISAMPLERBUFFER USAMPLERBUFFER
@@ -233,18 +225,24 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %token <lex> F16IMAGECUBE F16IMAGE1DARRAY F16IMAGE2DARRAY F16IMAGECUBEARRAY
 %token <lex> F16IMAGEBUFFER F16IMAGE2DMS F16IMAGE2DMSARRAY
 
-// pure sampler
-%token <lex> SAMPLER SAMPLERSHADOW
+%token <lex> I64IMAGE1D U64IMAGE1D
+%token <lex> I64IMAGE2D U64IMAGE2D
+%token <lex> I64IMAGE3D U64IMAGE3D
+%token <lex> I64IMAGE2DRECT U64IMAGE2DRECT
+%token <lex> I64IMAGECUBE U64IMAGECUBE
+%token <lex> I64IMAGEBUFFER U64IMAGEBUFFER
+%token <lex> I64IMAGE1DARRAY U64IMAGE1DARRAY
+%token <lex> I64IMAGE2DARRAY U64IMAGE2DARRAY
+%token <lex> I64IMAGECUBEARRAY U64IMAGECUBEARRAY
+%token <lex> I64IMAGE2DMS U64IMAGE2DMS
+%token <lex> I64IMAGE2DMSARRAY U64IMAGE2DMSARRAY
 
 // texture without sampler
-%token <lex> TEXTURE1D TEXTURE2D TEXTURE3D TEXTURECUBE
-%token <lex> TEXTURE1DARRAY TEXTURE2DARRAY
-%token <lex> ITEXTURE1D ITEXTURE2D ITEXTURE3D ITEXTURECUBE
-%token <lex> ITEXTURE1DARRAY ITEXTURE2DARRAY UTEXTURE1D UTEXTURE2D UTEXTURE3D
-%token <lex> UTEXTURECUBE UTEXTURE1DARRAY UTEXTURE2DARRAY
+%token <lex> TEXTURECUBEARRAY ITEXTURECUBEARRAY UTEXTURECUBEARRAY
+%token <lex> TEXTURE1D ITEXTURE1D UTEXTURE1D
+%token <lex> TEXTURE1DARRAY ITEXTURE1DARRAY UTEXTURE1DARRAY
 %token <lex> TEXTURE2DRECT ITEXTURE2DRECT UTEXTURE2DRECT
 %token <lex> TEXTUREBUFFER ITEXTUREBUFFER UTEXTUREBUFFER
-%token <lex> TEXTURECUBEARRAY ITEXTURECUBEARRAY UTEXTURECUBEARRAY
 %token <lex> TEXTURE2DMS ITEXTURE2DMS UTEXTURE2DMS
 %token <lex> TEXTURE2DMSARRAY ITEXTURE2DMSARRAY UTEXTURE2DMSARRAY
 
@@ -256,13 +254,18 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %token <lex> SUBPASSINPUT SUBPASSINPUTMS ISUBPASSINPUT ISUBPASSINPUTMS USUBPASSINPUT USUBPASSINPUTMS
 %token <lex> F16SUBPASSINPUT F16SUBPASSINPUTMS
 
-
+// spirv intrinsics
+%token <lex> SPIRV_INSTRUCTION SPIRV_EXECUTION_MODE SPIRV_EXECUTION_MODE_ID
+%token <lex> SPIRV_DECORATE SPIRV_DECORATE_ID SPIRV_DECORATE_STRING
+%token <lex> SPIRV_TYPE SPIRV_STORAGE_CLASS SPIRV_BY_REFERENCE SPIRV_LITERAL
+%token <lex> ATTACHMENTEXT IATTACHMENTEXT UATTACHMENTEXT
 
 %token <lex> LEFT_OP RIGHT_OP
 %token <lex> INC_OP DEC_OP LE_OP GE_OP EQ_OP NE_OP
 %token <lex> AND_OP OR_OP XOR_OP MUL_ASSIGN DIV_ASSIGN ADD_ASSIGN
 %token <lex> MOD_ASSIGN LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
 %token <lex> SUB_ASSIGN
+%token <lex> STRING_LITERAL
 
 %token <lex> LEFT_PAREN RIGHT_PAREN LEFT_BRACKET RIGHT_BRACKET LEFT_BRACE RIGHT_BRACE DOT
 %token <lex> COMMA COLON EQUAL SEMICOLON BANG DASH TILDE PLUS STAR SLASH PERCENT
@@ -271,26 +274,28 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %token <lex> INVARIANT
 %token <lex> HIGH_PRECISION MEDIUM_PRECISION LOW_PRECISION PRECISION
 %token <lex> PACKED RESOURCE SUPERP
+%token <lex> INLINE NOINLINE
 
 %token <lex> FLOATCONSTANT INTCONSTANT UINTCONSTANT BOOLCONSTANT
 %token <lex> IDENTIFIER TYPE_NAME
 %token <lex> CENTROID IN OUT INOUT
 %token <lex> STRUCT VOID WHILE
 %token <lex> BREAK CONTINUE DO ELSE FOR IF DISCARD RETURN SWITCH CASE DEFAULT
-%token <lex> UNIFORM SHARED
+%token <lex> TERMINATE_INVOCATION
+%token <lex> TERMINATE_RAY IGNORE_INTERSECTION
+%token <lex> UNIFORM SHARED BUFFER TILEIMAGEEXT
 %token <lex> FLAT SMOOTH LAYOUT
 
-
-%token <lex> DOUBLECONSTANT INT16CONSTANT UINT16CONSTANT FLOAT16CONSTANT INT32CONSTANT UINT32CONSTANT
+%token <lex> DOUBLECONSTANT INT16CONSTANT UINT16CONSTANT FLOAT16CONSTANT INT32CONSTANT UINT32CONSTANT FLOATE2M1CONSTANT FLOATE3M2CONSTANT FLOATE2M3CONSTANT FLOATUE8M0CONSTANT FLOATMXINT8CONSTANT
 %token <lex> INT64CONSTANT UINT64CONSTANT
-%token <lex> SUBROUTINE DEMOTE
-%token <lex> PAYLOADNV PAYLOADINNV HITATTRNV CALLDATANV CALLDATAINNV
-%token <lex> PATCH SAMPLE BUFFER NONUNIFORM
-%token <lex> COHERENT VOLATILE RESTRICT READONLY WRITEONLY DEVICECOHERENT QUEUEFAMILYCOHERENT WORKGROUPCOHERENT
-%token <lex> SUBGROUPCOHERENT NONPRIVATE
-%token <lex> NOPERSPECTIVE EXPLICITINTERPAMD PERVERTEXNV PERPRIMITIVENV PERVIEWNV PERTASKNV
+%token <lex> SUBROUTINE DEMOTE FUNCTION
+%token <lex> PAYLOADNV PAYLOADINNV HITATTRNV CALLDATANV CALLDATAINNV 
+%token <lex> PAYLOADEXT PAYLOADINEXT HITATTREXT CALLDATAEXT CALLDATAINEXT
+%token <lex> PATCH SAMPLE NONUNIFORM RESOURCEHEAP SAMPLERHEAP
+%token <lex> COHERENT VOLATILE RESTRICT READONLY WRITEONLY NONTEMPORAL DEVICECOHERENT QUEUEFAMILYCOHERENT WORKGROUPCOHERENT
+%token <lex> SUBGROUPCOHERENT NONPRIVATE SHADERCALLCOHERENT
+%token <lex> NOPERSPECTIVE EXPLICITINTERPAMD PERVERTEXEXT PERVERTEXNV PERPRIMITIVENV PERVIEWNV PERTASKNV PERPRIMITIVEEXT TASKPAYLOADWORKGROUPEXT
 %token <lex> PRECISE
-
 
 %type <interm> assignment_operator unary_operator
 %type <interm.intermTypedNode> variable_identifier primary_expression postfix_expression
@@ -300,7 +305,8 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %type <interm.intermTypedNode> conditional_expression constant_expression
 %type <interm.intermTypedNode> logical_or_expression logical_xor_expression logical_and_expression
 %type <interm.intermTypedNode> shift_expression and_expression exclusive_or_expression inclusive_or_expression
-%type <interm.intermTypedNode> function_call initializer condition conditionopt
+%type <interm.intermTypedNode> function_call initializer
+%type <interm.intermNode> condition conditionopt
 
 %type <interm.intermNode> translation_unit function_definition
 %type <interm.intermNode> statement simple_statement
@@ -327,8 +333,10 @@ extern int yylex(YYSTYPE*, TParseContext&);
 %type <interm.type> single_type_qualifier
 %type <interm.type> type_specifier_nonarray
 %type <interm.type> struct_specifier
+%type <interm.type> block_heap_inner_structure
 %type <interm.typeLine> struct_declarator
 %type <interm.typeList> struct_declarator_list struct_declaration struct_declaration_list
+%type <interm.typeList> struct_declaration_no_inline_block struct_declaration_no_inline_block_list
 %type <interm> block_structure
 %type <interm.function> function_header function_declarator
 %type <interm.function> function_header_with_parameters
@@ -337,13 +345,24 @@ extern int yylex(YYSTYPE*, TParseContext&);
 
 %type <interm.identifierList> identifier_list
 
-
 %type <interm.type> precise_qualifier non_uniform_qualifier
 %type <interm.typeList> type_name_list
 %type <interm.attributes> attribute attribute_list single_attribute
 %type <interm.intermNode> demote_statement
 %type <interm.intermTypedNode> initializer_list
-
+%type <interm.spirvReq> spirv_requirements_list spirv_requirements_parameter
+%type <interm.intermNode> spirv_extension_list spirv_capability_list
+%type <interm.intermNode> spirv_execution_mode_qualifier
+%type <interm.intermNode> spirv_execution_mode_parameter_list spirv_execution_mode_parameter spirv_execution_mode_id_parameter_list
+%type <interm.type> spirv_storage_class_qualifier
+%type <interm.type> spirv_decorate_qualifier
+%type <interm.intermNode> spirv_decorate_parameter_list spirv_decorate_parameter
+%type <interm.intermNode> spirv_decorate_id_parameter_list spirv_decorate_id_parameter
+%type <interm.intermNode> spirv_decorate_string_parameter_list
+%type <interm.type> spirv_type_specifier
+%type <interm.spirvTypeParams> spirv_type_parameter_list spirv_type_parameter
+%type <interm.spirvInst> spirv_instruction_qualifier
+%type <interm.spirvInst> spirv_instruction_qualifier_list spirv_instruction_qualifier_id
 
 %start translation_unit
 %%
@@ -376,7 +395,9 @@ primary_expression
     | BOOLCONSTANT {
         $$ = parseContext.intermediate.addConstantUnion($1.b, $1.loc, true);
     }
-
+    | STRING_LITERAL {
+        $$ = parseContext.intermediate.addConstantUnion($1.string, $1.loc, true);
+    }
     | INT32CONSTANT {
         parseContext.explicitInt32Check($1.loc, "32-bit signed literal");
         $$ = parseContext.intermediate.addConstantUnion($1.i, $1.loc, true);
@@ -402,14 +423,35 @@ primary_expression
         $$ = parseContext.intermediate.addConstantUnion((unsigned short)$1.u, $1.loc, true);
     }
     | DOUBLECONSTANT {
-        parseContext.doubleCheck($1.loc, "double literal");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double literal");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double literal");
         $$ = parseContext.intermediate.addConstantUnion($1.d, EbtDouble, $1.loc, true);
     }
     | FLOAT16CONSTANT {
         parseContext.float16Check($1.loc, "half float literal");
         $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloat16, $1.loc, true);
     }
-
+    | FLOATE2M1CONSTANT {
+        parseContext.floate2m1ScalarVectorCheck($1.loc, "fe2m1 literal");
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloatE2M1, $1.loc, true);
+    }
+    | FLOATE3M2CONSTANT {
+        parseContext.floate3m2ScalarVectorCheck($1.loc, "fe3m2 literal");
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloatE3M2, $1.loc, true);
+    }
+    | FLOATE2M3CONSTANT {
+        parseContext.floate2m3ScalarVectorCheck($1.loc, "fe2m3 literal");
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloatE2M3, $1.loc, true);
+    }
+    | FLOATUE8M0CONSTANT {
+        parseContext.floatue8m0ScalarVectorCheck($1.loc, "fue8m0 literal");
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloatUE8M0, $1.loc, true);
+    }
+    | FLOATMXINT8CONSTANT {
+        parseContext.floatmxint8ScalarVectorCheck($1.loc, "fmxint8 literal");
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloatMXINT8, $1.loc, true);
+    }
     ;
 
 postfix_expression
@@ -439,7 +481,7 @@ postfix_expression
 
 integer_expression
     : expression {
-        parseContext.integerCheck($1, "[]");
+        parseContext.arrayIndexCheck($1, "[]");
         $$ = $1;
     }
     ;
@@ -479,18 +521,44 @@ function_call_header_no_parameters
 
 function_call_header_with_parameters
     : function_call_header assignment_expression {
-        TParameter param = { 0, new TType };
-        param.type->shallowCopy($2->getType());
-        $1.function->addParameter(param);
-        $$.function = $1.function;
-        $$.intermNode = $2;
+        if (parseContext.spvVersion.vulkan > 0
+            && parseContext.spvVersion.vulkanRelaxed
+            && $2->getType().containsOpaque())
+        {
+            $$.intermNode = parseContext.vkRelaxedRemapFunctionArgument($$.loc, $1.function, $2);
+            $$.function = $1.function;
+        }
+        else
+        {
+            TParameter param = { 0, new TType, {} };
+            param.type->shallowCopy($2->getType());
+
+            $1.function->addParameter(param);
+            $$.function = $1.function;
+            $$.intermNode = $2;
+        }
     }
     | function_call_header_with_parameters COMMA assignment_expression {
-        TParameter param = { 0, new TType };
-        param.type->shallowCopy($3->getType());
-        $1.function->addParameter(param);
-        $$.function = $1.function;
-        $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, $3, $2.loc);
+        if (parseContext.spvVersion.vulkan > 0
+            && parseContext.spvVersion.vulkanRelaxed
+            && $3->getType().containsOpaque())
+        {
+            TIntermNode* remappedNode = parseContext.vkRelaxedRemapFunctionArgument($2.loc, $1.function, $3);
+            if (remappedNode == $3)
+                $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, $3, $2.loc);
+            else
+                $$.intermNode = parseContext.intermediate.mergeAggregate($1.intermNode, remappedNode, $2.loc);
+            $$.function = $1.function;
+        }
+        else
+        {
+            TParameter param = { 0, new TType, {} };
+            param.type->shallowCopy($3->getType());
+
+            $1.function->addParameter(param);
+            $$.function = $1.function;
+            $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, $3, $2.loc);
+        }
     }
     ;
 
@@ -517,7 +585,7 @@ function_identifier
 
         TIntermMethod* method = $1->getAsMethodNode();
         if (method) {
-            $$.function = new TFunction(&method->getMethodName(), TType(EbtInt), EOpArrayLength);
+            $$.function = new TFunction(&method->getMethodName(), method->getType(), EOpArrayLength);
             $$.intermNode = method->getObject();
         } else {
             TIntermSymbol* symbol = $1->getAsSymbolNode();
@@ -535,13 +603,11 @@ function_identifier
             $$.function = new TFunction(empty, TType(EbtVoid), EOpNull);
         }
     }
-
     | non_uniform_qualifier {
         // Constructor
         $$.intermNode = 0;
         $$.function = parseContext.handleConstructorCall($1.loc, $1);
     }
-
     ;
 
 unary_expression
@@ -575,8 +641,11 @@ unary_expression
                 $$->getAsConstantUnion()->setExpression();
         }
     }
+    | LEFT_PAREN type_specifier_nonarray RIGHT_PAREN unary_expression {
+        $$ = parseContext.handleTypeCast($1.loc, new TType($2), $4);
+    }
     ;
-// Grammar Note:  No traditional style type casts.
+// Grammar Note:  No traditional style type casts, except under NV extension
 
 unary_operator
     : PLUS  { $$.loc = $1.loc; $$.op = EOpNull; }
@@ -753,7 +822,7 @@ conditional_expression
         parseContext.rValueErrorCheck($5.loc, ":", $6);
         $$ = parseContext.intermediate.addSelection($1, $4, $6, $2.loc);
         if ($$ == 0) {
-            parseContext.binaryOpError($2.loc, ":", $4->getCompleteString(), $6->getCompleteString());
+            parseContext.binaryOpError($2.loc, ":", $4->getCompleteString(parseContext.intermediate.getEnhancedMsgs()), $6->getCompleteString(parseContext.intermediate.getEnhancedMsgs()));
             $$ = $6;
         }
     }
@@ -768,9 +837,9 @@ assignment_expression
         parseContext.specializationCheck($2.loc, $1->getType(), "=");
         parseContext.lValueErrorCheck($2.loc, "assign", $1);
         parseContext.rValueErrorCheck($2.loc, "assign", $3);
-        $$ = parseContext.intermediate.addAssign($2.op, $1, $3, $2.loc);
+        $$ = parseContext.addAssign($2.loc, $2.op, $1, $3);
         if ($$ == 0) {
-            parseContext.assignError($2.loc, "assign", $1->getCompleteString(), $3->getCompleteString());
+            parseContext.assignError($2.loc, "assign", $1->getCompleteString(parseContext.intermediate.getEnhancedMsgs()), $3->getCompleteString(parseContext.intermediate.getEnhancedMsgs()));
             $$ = $1;
         }
     }
@@ -832,7 +901,7 @@ expression
         parseContext.samplerConstructorLocationCheck($2.loc, ",", $3);
         $$ = parseContext.intermediate.addComma($1, $3, $2.loc);
         if ($$ == 0) {
-            parseContext.binaryOpError($2.loc, ",", $1->getCompleteString(), $3->getCompleteString());
+            parseContext.binaryOpError($2.loc, ",", $1->getCompleteString(parseContext.intermediate.getEnhancedMsgs()), $3->getCompleteString(parseContext.intermediate.getEnhancedMsgs()));
             $$ = $3;
         }
     }
@@ -851,6 +920,18 @@ declaration
         $$ = 0;
         // TODO: 4.0 functionality: subroutines: make the identifier a user type for this signature
     }
+    | spirv_instruction_qualifier function_prototype SEMICOLON {
+        parseContext.requireExtensions($2.loc, 1, &E_GL_EXT_spirv_intrinsics, "SPIR-V instruction qualifier");
+        $2.function->setSpirvInstruction(*$1); // Attach SPIR-V intruction qualifier
+        parseContext.handleFunctionDeclarator($2.loc, *$2.function, true /* prototype */);
+        $$ = 0;
+        // TODO: 4.0 functionality: subroutines: make the identifier a user type for this signature
+    }
+    | spirv_execution_mode_qualifier SEMICOLON {
+        parseContext.globalCheck($2.loc, "SPIR-V execution mode qualifier");
+        parseContext.requireExtensions($2.loc, 1, &E_GL_EXT_spirv_intrinsics, "SPIR-V execution mode qualifier");
+        $$ = 0;
+    }
     | init_declarator_list SEMICOLON {
         if ($1.intermNode && $1.intermNode->getAsAggregate())
             $1.intermNode->getAsAggregate()->setOperator(EOpSequence);
@@ -864,38 +945,29 @@ declaration
         $$ = 0;
     }
     | block_structure SEMICOLON {
-        parseContext.declareBlock($1.loc, *$1.typeList);
-        $$ = 0;
+        $$ = parseContext.declareBlock($1.loc, *$1.typeList);
     }
     | block_structure IDENTIFIER SEMICOLON {
-        parseContext.declareBlock($1.loc, *$1.typeList, $2.string);
-        $$ = 0;
+        $$ = parseContext.declareBlock($1.loc, *$1.typeList, $2.string);
     }
     | block_structure IDENTIFIER array_specifier SEMICOLON {
-        parseContext.declareBlock($1.loc, *$1.typeList, $2.string, $3.arraySizes);
-        $$ = 0;
+        $$ = parseContext.declareBlock($1.loc, *$1.typeList, $2.string, $3.arraySizes);
     }
     | type_qualifier SEMICOLON {
         parseContext.globalQualifierFixCheck($1.loc, $1.qualifier);
         parseContext.updateStandaloneQualifierDefaults($1.loc, $1);
         $$ = 0;
     }
-    | type_qualifier IDENTIFIER SEMICOLON {
+    | type_qualifier identifier_list SEMICOLON {
         parseContext.checkNoShaderLayouts($1.loc, $1.shaderQualifiers);
-        parseContext.addQualifierToExisting($1.loc, $1.qualifier, *$2.string);
-        $$ = 0;
-    }
-    | type_qualifier IDENTIFIER identifier_list SEMICOLON {
-        parseContext.checkNoShaderLayouts($1.loc, $1.shaderQualifiers);
-        $3->push_back($2.string);
-        parseContext.addQualifierToExisting($1.loc, $1.qualifier, *$3);
+        parseContext.addQualifierToExisting($1.loc, $1.qualifier, *$2);
         $$ = 0;
     }
     ;
 
 block_structure
     : type_qualifier IDENTIFIER LEFT_BRACE { parseContext.nestedBlockCheck($1.loc); } struct_declaration_list RIGHT_BRACE {
-        --parseContext.structNestingLevel;
+        --parseContext.blockNestingLevel;
         parseContext.blockName = $2.string;
         parseContext.globalQualifierFixCheck($1.loc, $1.qualifier);
         parseContext.checkNoShaderLayouts($1.loc, $1.shaderQualifiers);
@@ -903,11 +975,12 @@ block_structure
         $$.loc = $1.loc;
         $$.typeList = $5;
     }
+    ;
 
 identifier_list
-    : COMMA IDENTIFIER {
+    : IDENTIFIER {
         $$ = new TIdentifierList;
-        $$->push_back($2.string);
+        $$->push_back($1.string);
     }
     | identifier_list COMMA IDENTIFIER {
         $$ = $1;
@@ -918,7 +991,33 @@ identifier_list
 function_prototype
     : function_declarator RIGHT_PAREN  {
         $$.function = $1;
+        if (parseContext.compileOnly) $$.function->setExport();
         $$.loc = $2.loc;
+    }
+    | function_declarator RIGHT_PAREN attribute {
+        $$.function = $1;
+        if (parseContext.compileOnly) $$.function->setExport();
+        $$.loc = $2.loc;
+        const char * extensions[3] = { E_GL_EXT_subgroup_uniform_control_flow, E_GL_EXT_maximal_reconvergence, E_GL_EXT_function_control_attributes };
+        parseContext.requireExtensions($2.loc, 3, extensions, "attribute");
+        parseContext.handleFunctionAttributes($2.loc, *$$.function, *$3);
+    }
+    | attribute function_declarator RIGHT_PAREN {
+        $$.function = $2;
+        if (parseContext.compileOnly) $$.function->setExport();
+        $$.loc = $3.loc;
+        const char * extensions[3] = { E_GL_EXT_subgroup_uniform_control_flow, E_GL_EXT_maximal_reconvergence, E_GL_EXT_function_control_attributes };
+        parseContext.requireExtensions($3.loc, 3, extensions, "attribute");
+        parseContext.handleFunctionAttributes($3.loc, *$$.function, *$1);
+    }
+    | attribute function_declarator RIGHT_PAREN attribute {
+        $$.function = $2;
+        if (parseContext.compileOnly) $$.function->setExport();
+        $$.loc = $3.loc;
+        const char * extensions[3] = { E_GL_EXT_subgroup_uniform_control_flow, E_GL_EXT_maximal_reconvergence, E_GL_EXT_function_control_attributes };
+        parseContext.requireExtensions($3.loc, 3, extensions, "attribute");
+        parseContext.handleFunctionAttributes($3.loc, *$$.function, *$1);
+        parseContext.handleFunctionAttributes($3.loc, *$$.function, *$4);
     }
     ;
 
@@ -937,7 +1036,12 @@ function_header_with_parameters
         // Add the parameter
         $$ = $1;
         if ($2.param.type->getBasicType() != EbtVoid)
-            $1->addParameter($2.param);
+        {
+            if (!(parseContext.spvVersion.vulkan > 0 && parseContext.spvVersion.vulkanRelaxed))
+                $1->addParameter($2.param);
+            else
+                parseContext.vkRelaxedRemapFunctionParameter($1, $2.param);
+        }
         else
             delete $2.param.type;
     }
@@ -955,8 +1059,15 @@ function_header_with_parameters
         } else {
             // Add the parameter
             $$ = $1;
-            $1->addParameter($3.param);
+            if (!(parseContext.spvVersion.vulkan > 0 && parseContext.spvVersion.vulkanRelaxed))
+                $1->addParameter($3.param);
+            else
+                parseContext.vkRelaxedRemapFunctionParameter($1, $3.param);
         }
+    }
+    | function_header_with_parameters COMMA DOT DOT DOT {
+        $$ = $1;
+        parseContext.makeVariadic($1, $3.loc);
     }
     ;
 
@@ -995,7 +1106,7 @@ parameter_declarator
         }
         parseContext.reservedErrorCheck($2.loc, *$2.string);
 
-        TParameter param = {$2.string, new TType($1)};
+        TParameter param = {$2.string, new TType($1), {}};
         $$.loc = $2.loc;
         $$.param = param;
     }
@@ -1013,8 +1124,13 @@ parameter_declarator
         parseContext.arraySizeRequiredCheck($3.loc, *$3.arraySizes);
         parseContext.reservedErrorCheck($2.loc, *$2.string);
 
-        TParameter param = { $2.string, type };
+        TParameter param = { $2.string, type, {} };
 
+        $$.loc = $2.loc;
+        $$.param = param;
+    }
+    | type_specifier IDENTIFIER EQUAL initializer {
+        TParameter param = parseContext.getParamWithDefault($1, $2.string, $4, $3.loc);
         $$.loc = $2.loc;
         $$.param = param;
     }
@@ -1028,7 +1144,7 @@ parameter_declaration
         $$ = $2;
         if ($1.qualifier.precision != EpqNone)
             $$.param.type->getQualifier().precision = $1.qualifier.precision;
-        parseContext.precisionQualifierCheck($$.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier());
+        parseContext.precisionQualifierCheck($$.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier(), $$.param.type->hasTypeParameter());
 
         parseContext.checkNoShaderLayouts($1.loc, $1.shaderQualifiers);
         parseContext.parameterTypeCheck($2.loc, $1.qualifier.storage, *$$.param.type);
@@ -1040,7 +1156,7 @@ parameter_declaration
 
         parseContext.parameterTypeCheck($1.loc, EvqIn, *$1.param.type);
         parseContext.paramCheckFixStorage($1.loc, EvqTemporary, *$$.param.type);
-        parseContext.precisionQualifierCheck($$.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier());
+        parseContext.precisionQualifierCheck($$.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier(), $$.param.type->hasTypeParameter());
     }
     //
     // Without name
@@ -1049,7 +1165,7 @@ parameter_declaration
         $$ = $2;
         if ($1.qualifier.precision != EpqNone)
             $$.param.type->getQualifier().precision = $1.qualifier.precision;
-        parseContext.precisionQualifierCheck($1.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier());
+        parseContext.precisionQualifierCheck($1.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier(), $$.param.type->hasTypeParameter());
 
         parseContext.checkNoShaderLayouts($1.loc, $1.shaderQualifiers);
         parseContext.parameterTypeCheck($2.loc, $1.qualifier.storage, *$$.param.type);
@@ -1060,13 +1176,13 @@ parameter_declaration
 
         parseContext.parameterTypeCheck($1.loc, EvqIn, *$1.param.type);
         parseContext.paramCheckFixStorage($1.loc, EvqTemporary, *$$.param.type);
-        parseContext.precisionQualifierCheck($$.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier());
+        parseContext.precisionQualifierCheck($$.loc, $$.param.type->getBasicType(), $$.param.type->getQualifier(), $$.param.type->hasTypeParameter());
     }
     ;
 
 parameter_type_specifier
     : type_specifier {
-        TParameter param = { 0, new TType($1) };
+        TParameter param = { 0, new TType($1), {} };
         $$.param = param;
         if ($1.arraySizes)
             parseContext.arraySizeRequiredCheck($1.loc, *$1.arraySizes);
@@ -1079,21 +1195,23 @@ init_declarator_list
     }
     | init_declarator_list COMMA IDENTIFIER {
         $$ = $1;
-        parseContext.declareVariable($3.loc, *$3.string, $1.type);
+        TIntermNode* declNode = parseContext.declareVariable($3.loc, *$3.string, $1.type);
+        $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, declNode, $3.loc);
     }
     | init_declarator_list COMMA IDENTIFIER array_specifier {
         $$ = $1;
-        parseContext.declareVariable($3.loc, *$3.string, $1.type, $4.arraySizes);
+        TIntermNode* declNode = parseContext.declareVariable($3.loc, *$3.string, $1.type, $4.arraySizes);
+        $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, declNode, $3.loc);
     }
     | init_declarator_list COMMA IDENTIFIER array_specifier EQUAL initializer {
         $$.type = $1.type;
-        TIntermNode* initNode = parseContext.declareVariable($3.loc, *$3.string, $1.type, $4.arraySizes, $6);
-        $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, initNode, $5.loc);
+        TIntermNode* declNode = parseContext.declareVariable($3.loc, *$3.string, $1.type, $4.arraySizes, $6);
+        $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, declNode, $5.loc);
     }
     | init_declarator_list COMMA IDENTIFIER EQUAL initializer {
         $$.type = $1.type;
-        TIntermNode* initNode = parseContext.declareVariable($3.loc, *$3.string, $1.type, 0, $5);
-        $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, initNode, $4.loc);
+        TIntermNode* declNode = parseContext.declareVariable($3.loc, *$3.string, $1.type, 0, $5);
+        $$.intermNode = parseContext.intermediate.growAggregate($1.intermNode, declNode, $4.loc);
     }
     ;
 
@@ -1101,29 +1219,28 @@ single_declaration
     : fully_specified_type {
         $$.type = $1;
         $$.intermNode = 0;
-
         parseContext.declareTypeDefaults($$.loc, $$.type);
-
     }
     | fully_specified_type IDENTIFIER {
         $$.type = $1;
-        $$.intermNode = 0;
-        parseContext.declareVariable($2.loc, *$2.string, $1);
+        TIntermNode* declNode = parseContext.declareVariable($2.loc, *$2.string, $1);
+        $$.intermNode = parseContext.intermediate.growAggregate(nullptr, declNode, $2.loc);
+
     }
     | fully_specified_type IDENTIFIER array_specifier {
         $$.type = $1;
-        $$.intermNode = 0;
-        parseContext.declareVariable($2.loc, *$2.string, $1, $3.arraySizes);
+        TIntermNode* declNode = parseContext.declareVariable($2.loc, *$2.string, $1, $3.arraySizes);
+        $$.intermNode = parseContext.intermediate.growAggregate(nullptr, declNode, $2.loc);
     }
     | fully_specified_type IDENTIFIER array_specifier EQUAL initializer {
         $$.type = $1;
-        TIntermNode* initNode = parseContext.declareVariable($2.loc, *$2.string, $1, $3.arraySizes, $5);
-        $$.intermNode = parseContext.intermediate.growAggregate(0, initNode, $4.loc);
+        TIntermNode* declNode = parseContext.declareVariable($2.loc, *$2.string, $1, $3.arraySizes, $5);
+        $$.intermNode = parseContext.intermediate.growAggregate(nullptr, declNode, $2.loc);
     }
     | fully_specified_type IDENTIFIER EQUAL initializer {
         $$.type = $1;
-        TIntermNode* initNode = parseContext.declareVariable($2.loc, *$2.string, $1, 0, $4);
-        $$.intermNode = parseContext.intermediate.growAggregate(0, initNode, $3.loc);
+        TIntermNode* declNode = parseContext.declareVariable($2.loc, *$2.string, $1, 0, $4);
+        $$.intermNode = parseContext.intermediate.growAggregate(nullptr, declNode, $2.loc);
     }
 
 // Grammar Note:  No 'enum', or 'typedef'.
@@ -1137,10 +1254,10 @@ fully_specified_type
             parseContext.profileRequires($1.loc, ENoProfile, 120, E_GL_3DL_array_objects, "arrayed type");
             parseContext.profileRequires($1.loc, EEsProfile, 300, 0, "arrayed type");
         }
-        parseContext.precisionQualifierCheck($$.loc, $$.basicType, $$.qualifier);
+        parseContext.precisionQualifierCheck($$.loc, $$.basicType, $$.qualifier, $$.hasTypeParameter());
     }
     | type_qualifier type_specifier  {
-        parseContext.globalQualifierFixCheck($1.loc, $1.qualifier);
+        parseContext.globalQualifierFixCheck($1.loc, $1.qualifier, false, &$2);
         parseContext.globalQualifierTypeCheck($1.loc, $1.qualifier, $2);
 
         if ($2.arraySizes) {
@@ -1154,7 +1271,7 @@ fully_specified_type
         parseContext.checkNoShaderLayouts($2.loc, $1.shaderQualifiers);
         $2.shaderQualifiers.merge($1.shaderQualifiers);
         parseContext.mergeQualifiers($2.loc, $2.qualifier, $1.qualifier, true);
-        parseContext.precisionQualifierCheck($2.loc, $2.basicType, $2.qualifier);
+        parseContext.precisionQualifierCheck($2.loc, $2.basicType, $2.qualifier, $2.hasTypeParameter());
 
         $$ = $2;
 
@@ -1189,7 +1306,6 @@ interpolation_qualifier
         $$.init($1.loc);
         $$.qualifier.flat = true;
     }
-
     | NOPERSPECTIVE {
         parseContext.globalCheck($1.loc, "noperspective");
         parseContext.profileRequires($1.loc, EEsProfile, 0, E_GL_NV_shader_noperspective_interpolation, "noperspective");
@@ -1212,31 +1328,48 @@ interpolation_qualifier
         $$.init($1.loc);
         $$.qualifier.pervertexNV = true;
     }
+    | PERVERTEXEXT {
+        parseContext.globalCheck($1.loc, "pervertexEXT");
+        parseContext.profileRequires($1.loc, ECoreProfile, 0, E_GL_EXT_fragment_shader_barycentric, "fragment shader barycentric");
+        parseContext.profileRequires($1.loc, ECompatibilityProfile, 0, E_GL_EXT_fragment_shader_barycentric, "fragment shader barycentric");
+        parseContext.profileRequires($1.loc, EEsProfile, 0, E_GL_EXT_fragment_shader_barycentric, "fragment shader barycentric");
+        $$.init($1.loc);
+        $$.qualifier.pervertexEXT = true;
+    }
     | PERPRIMITIVENV {
         // No need for profile version or extension check. Shader stage already checks both.
         parseContext.globalCheck($1.loc, "perprimitiveNV");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangFragmentMask | EShLangMeshNVMask), "perprimitiveNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangFragmentMask | EShLangMeshMask), "perprimitiveNV");
         // Fragment shader stage doesn't check for extension. So we explicitly add below extension check.
         if (parseContext.language == EShLangFragment)
             parseContext.requireExtensions($1.loc, 1, &E_GL_NV_mesh_shader, "perprimitiveNV");
         $$.init($1.loc);
         $$.qualifier.perPrimitiveNV = true;
     }
+    | PERPRIMITIVEEXT {
+        // No need for profile version or extension check. Shader stage already checks both.
+        parseContext.globalCheck($1.loc, "perprimitiveEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangFragmentMask | EShLangMeshMask), "perprimitiveEXT");
+        // Fragment shader stage doesn't check for extension. So we explicitly add below extension check.
+        if (parseContext.language == EShLangFragment)
+            parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_mesh_shader, "perprimitiveEXT");
+        $$.init($1.loc);
+        $$.qualifier.perPrimitiveNV = true;
+    }
     | PERVIEWNV {
         // No need for profile version or extension check. Shader stage already checks both.
         parseContext.globalCheck($1.loc, "perviewNV");
-        parseContext.requireStage($1.loc, EShLangMeshNV, "perviewNV");
+        parseContext.requireStage($1.loc, EShLangMesh, "perviewNV");
         $$.init($1.loc);
         $$.qualifier.perViewNV = true;
     }
     | PERTASKNV {
         // No need for profile version or extension check. Shader stage already checks both.
         parseContext.globalCheck($1.loc, "taskNV");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangTaskNVMask | EShLangMeshNVMask), "taskNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangTaskMask | EShLangMeshMask), "taskNV");
         $$.init($1.loc);
         $$.qualifier.perTaskNV = true;
     }
-
     ;
 
 layout_qualifier
@@ -1260,7 +1393,7 @@ layout_qualifier_id
         $$.init($1.loc);
         parseContext.setLayoutQualifier($1.loc, $$, *$1.string);
     }
-    | IDENTIFIER EQUAL constant_expression {
+    | IDENTIFIER EQUAL assignment_expression {
         $$.init($1.loc);
         parseContext.setLayoutQualifier($1.loc, $$, *$1.string, $3);
     }
@@ -1271,7 +1404,6 @@ layout_qualifier_id
     }
     ;
 
-
 precise_qualifier
     : PRECISE {
         parseContext.profileRequires($$.loc, ECoreProfile | ECompatibilityProfile, 400, E_GL_ARB_gpu_shader5, "precise");
@@ -1280,7 +1412,6 @@ precise_qualifier
         $$.qualifier.noContraction = true;
     }
     ;
-
 
 type_qualifier
     : single_type_qualifier {
@@ -1315,7 +1446,6 @@ single_type_qualifier
         // allow inheritance of storage qualifier from block declaration
         $$ = $1;
     }
-
     | precise_qualifier {
         // allow inheritance of storage qualifier from block declaration
         $$ = $1;
@@ -1323,7 +1453,25 @@ single_type_qualifier
     | non_uniform_qualifier {
         $$ = $1;
     }
-
+    | spirv_storage_class_qualifier {
+        parseContext.globalCheck($1.loc, "spirv_storage_class");
+        parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_spirv_intrinsics, "SPIR-V storage class qualifier");
+        $$ = $1;
+    }
+    | spirv_decorate_qualifier {
+        parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_spirv_intrinsics, "SPIR-V decorate qualifier");
+        $$ = $1;
+    }
+    | SPIRV_BY_REFERENCE {
+        parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_spirv_intrinsics, "spirv_by_reference");
+        $$.init($1.loc);
+        $$.qualifier.setSpirvByReference();
+    }
+    | SPIRV_LITERAL {
+        parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_spirv_intrinsics, "spirv_by_literal");
+        $$.init($1.loc);
+        $$.qualifier.setSpirvLiteral();
+    }
     ;
 
 storage_qualifier
@@ -1360,12 +1508,16 @@ storage_qualifier
         $$.init($1.loc);
         $$.qualifier.storage = EvqUniform;
     }
-
+    | TILEIMAGEEXT {
+        parseContext.globalCheck($1.loc, "tileImageEXT");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqTileImageEXT;
+    }
     | SHARED {
         parseContext.globalCheck($1.loc, "shared");
         parseContext.profileRequires($1.loc, ECoreProfile | ECompatibilityProfile, 430, E_GL_ARB_compute_shader, "shared");
         parseContext.profileRequires($1.loc, EEsProfile, 310, 0, "shared");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangComputeMask | EShLangMeshNVMask | EShLangTaskNVMask), "shared");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangComputeMask | EShLangMeshMask | EShLangTaskMask), "shared");
         $$.init($1.loc);
         $$.qualifier.storage = EvqShared;
     }
@@ -1411,44 +1563,109 @@ storage_qualifier
         $$.init($1.loc);
         $$.qualifier.sample = true;
     }
+    | RESOURCEHEAP {
+        parseContext.globalCheck($1.loc, "resourceHeap");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqResourceHeap;
+    }
+    | SAMPLERHEAP {
+        parseContext.globalCheck($1.loc, "samplerHeap");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqSamplerHeap;
+    }
     | HITATTRNV {
         parseContext.globalCheck($1.loc, "hitAttributeNV");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangIntersectNVMask | EShLangClosestHitNVMask
-            | EShLangAnyHitNVMask), "hitAttributeNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangIntersectMask | EShLangClosestHitMask
+            | EShLangAnyHitMask), "hitAttributeNV");
         parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_NV_ray_tracing, "hitAttributeNV");
         $$.init($1.loc);
-        $$.qualifier.storage = EvqHitAttrNV;
+        $$.qualifier.storage = EvqHitAttr;
+    }
+    | HITOBJECTATTRNV {
+        parseContext.globalCheck($1.loc, "hitAttributeNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenMask | EShLangClosestHitMask
+            | EShLangMissMask), "hitObjectAttributeNV");
+        parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_NV_shader_invocation_reorder, "hitObjectAttributeNV");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqHitObjectAttrNV;
+    }
+    | HITOBJECTATTREXT {
+        parseContext.globalCheck($1.loc, "hitAttributeEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenMask | EShLangClosestHitMask
+            | EShLangMissMask), "hitObjectAttributeEXT");
+        parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_EXT_shader_invocation_reorder, "hitObjectAttributeEXT");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqHitObjectAttrEXT;
+    }
+    | HITATTREXT {
+        parseContext.globalCheck($1.loc, "hitAttributeEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangIntersectMask | EShLangClosestHitMask
+            | EShLangAnyHitMask), "hitAttributeEXT");
+        parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_EXT_ray_tracing, "hitAttributeNV");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqHitAttr;
     }
     | PAYLOADNV {
         parseContext.globalCheck($1.loc, "rayPayloadNV");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenNVMask | EShLangClosestHitNVMask |
-            EShLangAnyHitNVMask | EShLangMissNVMask), "rayPayloadNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenMask | EShLangClosestHitMask |
+            EShLangAnyHitMask | EShLangMissMask), "rayPayloadNV");
         parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_NV_ray_tracing, "rayPayloadNV");
         $$.init($1.loc);
-        $$.qualifier.storage = EvqPayloadNV;
+        $$.qualifier.storage = EvqPayload;
+    }
+    | PAYLOADEXT {
+        parseContext.globalCheck($1.loc, "rayPayloadEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenMask | EShLangClosestHitMask |
+            EShLangAnyHitMask | EShLangMissMask), "rayPayloadEXT");
+        parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_EXT_ray_tracing, "rayPayloadEXT");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqPayload;
     }
     | PAYLOADINNV {
         parseContext.globalCheck($1.loc, "rayPayloadInNV");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangClosestHitNVMask |
-            EShLangAnyHitNVMask | EShLangMissNVMask), "rayPayloadInNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangClosestHitMask |
+            EShLangAnyHitMask | EShLangMissMask), "rayPayloadInNV");
         parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_NV_ray_tracing, "rayPayloadInNV");
         $$.init($1.loc);
-        $$.qualifier.storage = EvqPayloadInNV;
+        $$.qualifier.storage = EvqPayloadIn;
+    }
+    | PAYLOADINEXT {
+        parseContext.globalCheck($1.loc, "rayPayloadInEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangClosestHitMask |
+            EShLangAnyHitMask | EShLangMissMask), "rayPayloadInEXT");
+        parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_EXT_ray_tracing, "rayPayloadInEXT");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqPayloadIn;
     }
     | CALLDATANV {
         parseContext.globalCheck($1.loc, "callableDataNV");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenNVMask |
-            EShLangClosestHitNVMask | EShLangMissNVMask | EShLangCallableNVMask), "callableDataNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenMask |
+            EShLangClosestHitMask | EShLangMissMask | EShLangCallableMask), "callableDataNV");
         parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_NV_ray_tracing, "callableDataNV");
         $$.init($1.loc);
-        $$.qualifier.storage = EvqCallableDataNV;
+        $$.qualifier.storage = EvqCallableData;
+    }
+    | CALLDATAEXT {
+        parseContext.globalCheck($1.loc, "callableDataEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangRayGenMask |
+            EShLangClosestHitMask | EShLangMissMask | EShLangCallableMask), "callableDataEXT");
+        parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_EXT_ray_tracing, "callableDataEXT");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqCallableData;
     }
     | CALLDATAINNV {
         parseContext.globalCheck($1.loc, "callableDataInNV");
-        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangCallableNVMask), "callableDataInNV");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangCallableMask), "callableDataInNV");
         parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_NV_ray_tracing, "callableDataInNV");
         $$.init($1.loc);
-        $$.qualifier.storage = EvqCallableDataInNV;
+        $$.qualifier.storage = EvqCallableDataIn;
+    }
+    | CALLDATAINEXT {
+        parseContext.globalCheck($1.loc, "callableDataInEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangCallableMask), "callableDataInEXT");
+        parseContext.profileRequires($1.loc, ECoreProfile, 460, E_GL_EXT_ray_tracing, "callableDataInEXT");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqCallableDataIn;
     }
     | COHERENT {
         $$.init($1.loc);
@@ -1479,6 +1696,11 @@ storage_qualifier
         parseContext.requireExtensions($1.loc, 1, &E_GL_KHR_memory_scope_semantics, "nonprivate");
         $$.qualifier.nonprivate = true;
     }
+    | SHADERCALLCOHERENT {
+        $$.init($1.loc);
+        parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_ray_tracing, "shadercallcoherent");
+        $$.qualifier.shadercallcoherent = true;
+    }
     | VOLATILE {
         $$.init($1.loc);
         $$.qualifier.volatil = true;
@@ -1495,6 +1717,10 @@ storage_qualifier
         $$.init($1.loc);
         $$.qualifier.writeonly = true;
     }
+    | NONTEMPORAL {
+        $$.init($1.loc);
+        $$.qualifier.nontemporal  = true;
+    }
     | SUBROUTINE {
         parseContext.spvRemoved($1.loc, "subroutine");
         parseContext.globalCheck($1.loc, "subroutine");
@@ -1507,9 +1733,14 @@ storage_qualifier
         parseContext.unimplemented($1.loc, "subroutine");
         $$.init($1.loc);
     }
-
+    | TASKPAYLOADWORKGROUPEXT {
+        // No need for profile version or extension check. Shader stage already checks both.
+        parseContext.globalCheck($1.loc, "taskPayloadSharedEXT");
+        parseContext.requireStage($1.loc, (EShLanguageMask)(EShLangTaskMask | EShLangMeshMask), "taskPayloadSharedEXT  ");
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqtaskPayloadSharedEXT;
+    }
     ;
-
 
 non_uniform_qualifier
     : NONUNIFORM {
@@ -1529,12 +1760,13 @@ type_name_list
     }
     ;
 
-
 type_specifier
     : type_specifier_nonarray type_parameter_specifier_opt {
         $$ = $1;
         $$.qualifier.precision = parseContext.getDefaultPrecision($$);
         $$.typeParameters = $2;
+        parseContext.typeParametersCheck($1.loc, $$);
+
     }
     | type_specifier_nonarray type_parameter_specifier_opt array_specifier {
         parseContext.arrayOfArrayVersionCheck($3.loc, $3.arraySizes);
@@ -1542,6 +1774,7 @@ type_specifier
         $$.qualifier.precision = parseContext.getDefaultPrecision($$);
         $$.typeParameters = $2;
         $$.arraySizes = $3.arraySizes;
+        parseContext.typeParametersCheck($1.loc, $$);
     }
     ;
 
@@ -1588,19 +1821,26 @@ type_parameter_specifier
     ;
 
 type_parameter_specifier_list
-    : unary_expression {
-        $$ = new TArraySizes;
+    : type_specifier {
+        $$ = new TTypeParameters;
+        $$->arraySizes = new TArraySizes;
+        $$->spirvType = $1.spirvType;
+        $$->basicType = $1.basicType;
+    }
+    | unary_expression {
+        $$ = new TTypeParameters;
+        $$->arraySizes = new TArraySizes;
 
         TArraySize size;
-        parseContext.arraySizeCheck($1->getLoc(), $1, size, "type parameter");
-        $$->addInnerSize(size);
+        parseContext.arraySizeCheck($1->getLoc(), $1, size, "type parameter", true);
+        $$->arraySizes->addInnerSize(size);
     }
     | type_parameter_specifier_list COMMA unary_expression {
         $$ = $1;
 
         TArraySize size;
-        parseContext.arraySizeCheck($3->getLoc(), $3, size, "type parameter");
-        $$->addInnerSize(size);
+        parseContext.arraySizeCheck($3->getLoc(), $3, size, "type parameter", true);
+        $$->arraySizes->addInnerSize(size);
     }
     ;
 
@@ -1749,11 +1989,52 @@ type_specifier_nonarray
         $$.basicType = EbtFloat;
         $$.setMatrix(4, 4);
     }
-
     | DOUBLE {
-        parseContext.doubleCheck($1.loc, "double");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
+    }
+    | BFLOAT16_T {
+        parseContext.bfloat16ScalarVectorCheck($1.loc, "bfloat16_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtBFloat16;
+    }
+    | FLOATE5M2_T {
+        parseContext.floate5m2ScalarVectorCheck($1.loc, "floate5m2_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE5M2;
+    }
+    | FLOATE4M3_T {
+        parseContext.floate4m3ScalarVectorCheck($1.loc, "floate4m3_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE4M3;
+    }
+    | FLOATE2M1_T {
+        parseContext.floate2m1ScalarVectorCheck($1.loc, "floate2m1_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M1;
+    }
+    | FLOATE3M2_T {
+        parseContext.floate3m2ScalarVectorCheck($1.loc, "floate3m2_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE3M2;
+    }
+    | FLOATE2M3_T {
+        parseContext.floate2m3ScalarVectorCheck($1.loc, "floate2m3_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M3;
+    }
+    | FLOATUE8M0_T {
+        parseContext.floatue8m0ScalarVectorCheck($1.loc, "floatue8m0_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatUE8M0;
+    }
+    | FLOATMXINT8_T {
+        parseContext.floatmxint8ScalarVectorCheck($1.loc, "floatmxint8_t", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatMXINT8;
     }
     | FLOAT16_T {
         parseContext.float16ScalarVectorCheck($1.loc, "float16_t", parseContext.symbolTable.atBuiltInLevel());
@@ -1811,21 +2092,171 @@ type_specifier_nonarray
         $$.basicType = EbtUint64;
     }
     | DVEC2 {
-        parseContext.doubleCheck($1.loc, "double vector");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double vector");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double vector");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setVector(2);
     }
     | DVEC3 {
-        parseContext.doubleCheck($1.loc, "double vector");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double vector");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double vector");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setVector(3);
     }
     | DVEC4 {
-        parseContext.doubleCheck($1.loc, "double vector");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double vector");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double vector");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
+        $$.setVector(4);
+    }
+    | BF16VEC2 {
+        parseContext.bfloat16ScalarVectorCheck($1.loc, "half float vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtBFloat16;
+        $$.setVector(2);
+    }
+    | BF16VEC3 {
+        parseContext.bfloat16ScalarVectorCheck($1.loc, "half float vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtBFloat16;
+        $$.setVector(3);
+    }
+    | BF16VEC4 {
+        parseContext.bfloat16ScalarVectorCheck($1.loc, "half float vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtBFloat16;
+        $$.setVector(4);
+    }
+    | FE5M2VEC2 {
+        parseContext.floate5m2ScalarVectorCheck($1.loc, "fe5m2 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE5M2;
+        $$.setVector(2);
+    }
+    | FE5M2VEC3 {
+        parseContext.floate5m2ScalarVectorCheck($1.loc, "fe5m2 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE5M2;
+        $$.setVector(3);
+    }
+    | FE5M2VEC4 {
+        parseContext.floate5m2ScalarVectorCheck($1.loc, "fe5m2 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE5M2;
+        $$.setVector(4);
+    }
+    | FE4M3VEC2 {
+        parseContext.floate4m3ScalarVectorCheck($1.loc, "fe4m3 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE4M3;
+        $$.setVector(2);
+    }
+    | FE4M3VEC3 {
+        parseContext.floate4m3ScalarVectorCheck($1.loc, "fe4m3 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE4M3;
+        $$.setVector(3);
+    }
+    | FE4M3VEC4 {
+        parseContext.floate4m3ScalarVectorCheck($1.loc, "fe4m3 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE4M3;
+        $$.setVector(4);
+    }
+    | FE2M1VEC2 {
+        parseContext.floate2m1ScalarVectorCheck($1.loc, "fe2m1 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M1;
+        $$.setVector(2);
+    }
+    | FE2M1VEC3 {
+        parseContext.floate2m1ScalarVectorCheck($1.loc, "fe2m1 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M1;
+        $$.setVector(3);
+    }
+    | FE2M1VEC4 {
+        parseContext.floate2m1ScalarVectorCheck($1.loc, "fe2m1 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M1;
+        $$.setVector(4);
+    }
+    | FE3M2VEC2 {
+        parseContext.floate3m2ScalarVectorCheck($1.loc, "fe3m2 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE3M2;
+        $$.setVector(2);
+    }
+    | FE3M2VEC3 {
+        parseContext.floate3m2ScalarVectorCheck($1.loc, "fe3m2 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE3M2;
+        $$.setVector(3);
+    }
+    | FE3M2VEC4 {
+        parseContext.floate3m2ScalarVectorCheck($1.loc, "fe3m2 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE3M2;
+        $$.setVector(4);
+    }
+    | FE2M3VEC2 {
+        parseContext.floate2m3ScalarVectorCheck($1.loc, "fe2m3 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M3;
+        $$.setVector(2);
+    }
+    | FE2M3VEC3 {
+        parseContext.floate2m3ScalarVectorCheck($1.loc, "fe2m3 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M3;
+        $$.setVector(3);
+    }
+    | FE2M3VEC4 {
+        parseContext.floate2m3ScalarVectorCheck($1.loc, "fe2m3 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatE2M3;
+        $$.setVector(4);
+    }
+    | FUE8M0VEC2 {
+        parseContext.floatue8m0ScalarVectorCheck($1.loc, "fue8m0 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatUE8M0;
+        $$.setVector(2);
+    }
+    | FUE8M0VEC3 {
+        parseContext.floatue8m0ScalarVectorCheck($1.loc, "fue8m0 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatUE8M0;
+        $$.setVector(3);
+    }
+    | FUE8M0VEC4 {
+        parseContext.floatue8m0ScalarVectorCheck($1.loc, "fue8m0 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatUE8M0;
+        $$.setVector(4);
+    }
+    | FMXINT8VEC2 {
+        parseContext.floatmxint8ScalarVectorCheck($1.loc, "fmxint8 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatMXINT8;
+        $$.setVector(2);
+    }
+    | FMXINT8VEC3 {
+        parseContext.floatmxint8ScalarVectorCheck($1.loc, "fmxint8 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatMXINT8;
+        $$.setVector(3);
+    }
+    | FMXINT8VEC4 {
+        parseContext.floatmxint8ScalarVectorCheck($1.loc, "fmxint8 vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtFloatMXINT8;
         $$.setVector(4);
     }
     | F16VEC2 {
@@ -2027,73 +2458,97 @@ type_specifier_nonarray
         $$.setVector(4);
     }
     | DMAT2 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(2, 2);
     }
     | DMAT3 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(3, 3);
     }
     | DMAT4 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(4, 4);
     }
     | DMAT2X2 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(2, 2);
     }
     | DMAT2X3 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(2, 3);
     }
     | DMAT2X4 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(2, 4);
     }
     | DMAT3X2 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(3, 2);
     }
     | DMAT3X3 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(3, 3);
     }
     | DMAT3X4 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(3, 4);
     }
     | DMAT4X2 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(4, 2);
     }
     | DMAT4X3 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(4, 3);
     }
     | DMAT4X4 {
-        parseContext.doubleCheck($1.loc, "double matrix");
+        parseContext.requireProfile($1.loc, ECoreProfile | ECompatibilityProfile, "double matrix");
+        if (! parseContext.symbolTable.atBuiltInLevel())
+            parseContext.doubleCheck($1.loc, "double matrix");
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtDouble;
         $$.setMatrix(4, 4);
@@ -2316,7 +2771,15 @@ type_specifier_nonarray
     }
     | ACCSTRUCTNV {
        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-       $$.basicType = EbtAccStructNV;
+       $$.basicType = EbtAccStruct;
+    }
+    | ACCSTRUCTEXT {
+       $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+       $$.basicType = EbtAccStruct;
+    }
+    | RAYQUERYEXT {
+       $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+       $$.basicType = EbtRayQuery;
     }
     | ATOMIC_UINT {
         parseContext.vulkanRemoved($1.loc, "atomic counter types");
@@ -2328,7 +2791,6 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtFloat, Esd1D);
     }
-
     | SAMPLER2D {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -2354,7 +2816,16 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtFloat, EsdCube, false, true);
     }
-
+    | SAMPLER2DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.set(EbtFloat, Esd2D, true);
+    }
+    | SAMPLER2DARRAYSHADOW {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.set(EbtFloat, Esd2D, true, true);
+    }
     | SAMPLER1DSHADOW {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -2370,17 +2841,6 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtFloat, Esd1D, true, true);
     }
-
-    | SAMPLER2DARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.set(EbtFloat, Esd2D, true);
-    }
-    | SAMPLER2DARRAYSHADOW {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.set(EbtFloat, Esd2D, true, true);
-    }
     | SAMPLERCUBEARRAY {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -2391,7 +2851,6 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtFloat, EsdCube, true, true);
     }
-
     | F16SAMPLER1D {
         parseContext.float16OpaqueCheck($1.loc, "half float sampler", parseContext.symbolTable.atBuiltInLevel());
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
@@ -2475,7 +2934,6 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtInt, Esd1D);
     }
-
     | ISAMPLER2D {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -2491,30 +2949,11 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtInt, EsdCube);
     }
-
-    | ISAMPLER1DARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.set(EbtInt, Esd1D, true);
-    }
-
     | ISAMPLER2DARRAY {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtInt, Esd2D, true);
     }
-    | ISAMPLERCUBEARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.set(EbtInt, EsdCube, true);
-    }
-
-    | USAMPLER1D {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.set(EbtUint, Esd1D);
-    }
-
     | USAMPLER2D {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -2530,24 +2969,121 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtUint, EsdCube);
     }
-
+    | ISAMPLER1DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.set(EbtInt, Esd1D, true);
+    }
+    | ISAMPLERCUBEARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.set(EbtInt, EsdCube, true);
+    }
+    | USAMPLER1D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.set(EbtUint, Esd1D);
+    }
     | USAMPLER1DARRAY {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtUint, Esd1D, true);
-    }
-
-    | USAMPLER2DARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.set(EbtUint, Esd2D, true);
     }
     | USAMPLERCUBEARRAY {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtUint, EsdCube, true);
     }
-
+    | TEXTURECUBEARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtFloat, EsdCube, true);
+    }
+    | ITEXTURECUBEARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtInt, EsdCube, true);
+    }
+    | UTEXTURECUBEARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtUint, EsdCube, true);
+    }
+    | USAMPLER2DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.set(EbtUint, Esd2D, true);
+    }
+    | TEXTURE2D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtFloat, Esd2D);
+    }
+    | TEXTURE3D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtFloat, Esd3D);
+    }
+    | TEXTURE2DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtFloat, Esd2D, true);
+    }
+    | TEXTURECUBE {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtFloat, EsdCube);
+    }
+    | ITEXTURE2D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtInt, Esd2D);
+    }
+    | ITEXTURE3D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtInt, Esd3D);
+    }
+    | ITEXTURECUBE {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtInt, EsdCube);
+    }
+    | ITEXTURE2DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtInt, Esd2D, true);
+    }
+    | UTEXTURE2D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtUint, Esd2D);
+    }
+    | UTEXTURE3D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtUint, Esd3D);
+    }
+    | UTEXTURECUBE {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtUint, EsdCube);
+    }
+    | UTEXTURE2DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setTexture(EbtUint, Esd2D, true);
+    }
+    | SAMPLER {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setPureSampler(false);
+    }
+    | SAMPLERSHADOW {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setPureSampler(true);
+    }
     | SAMPLER2DRECT {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -2643,16 +3179,6 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtUint, Esd2D, true, false, true);
     }
-    | SAMPLER {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setPureSampler(false);
-    }
-    | SAMPLERSHADOW {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setPureSampler(true);
-    }
     | TEXTURE1D {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -2664,32 +3190,17 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtFloat16, Esd1D);
     }
-    | TEXTURE2D {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtFloat, Esd2D);
-    }
     | F16TEXTURE2D {
         parseContext.float16OpaqueCheck($1.loc, "half float texture", parseContext.symbolTable.atBuiltInLevel());
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtFloat16, Esd2D);
     }
-    | TEXTURE3D {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtFloat, Esd3D);
-    }
     | F16TEXTURE3D {
         parseContext.float16OpaqueCheck($1.loc, "half float texture", parseContext.symbolTable.atBuiltInLevel());
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtFloat16, Esd3D);
-    }
-    | TEXTURECUBE {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtFloat, EsdCube);
     }
     | F16TEXTURECUBE {
         parseContext.float16OpaqueCheck($1.loc, "half float texture", parseContext.symbolTable.atBuiltInLevel());
@@ -2708,21 +3219,11 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtFloat16, Esd1D, true);
     }
-    | TEXTURE2DARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtFloat, Esd2D, true);
-    }
     | F16TEXTURE2DARRAY {
         parseContext.float16OpaqueCheck($1.loc, "half float texture", parseContext.symbolTable.atBuiltInLevel());
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtFloat16, Esd2D, true);
-    }
-    | TEXTURECUBEARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtFloat, EsdCube, true);
     }
     | F16TEXTURECUBEARRAY {
         parseContext.float16OpaqueCheck($1.loc, "half float texture", parseContext.symbolTable.atBuiltInLevel());
@@ -2735,70 +3236,20 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtInt, Esd1D);
     }
-    | ITEXTURE2D {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtInt, Esd2D);
-    }
-    | ITEXTURE3D {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtInt, Esd3D);
-    }
-    | ITEXTURECUBE {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtInt, EsdCube);
-    }
     | ITEXTURE1DARRAY {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtInt, Esd1D, true);
-    }
-    | ITEXTURE2DARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtInt, Esd2D, true);
-    }
-    | ITEXTURECUBEARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtInt, EsdCube, true);
     }
     | UTEXTURE1D {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtUint, Esd1D);
     }
-    | UTEXTURE2D {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtUint, Esd2D);
-    }
-    | UTEXTURE3D {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtUint, Esd3D);
-    }
-    | UTEXTURECUBE {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtUint, EsdCube);
-    }
     | UTEXTURE1DARRAY {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
         $$.sampler.setTexture(EbtUint, Esd1D, true);
-    }
-    | UTEXTURE2DARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtUint, Esd2D, true);
-    }
-    | UTEXTURECUBEARRAY {
-        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
-        $$.basicType = EbtSampler;
-        $$.sampler.setTexture(EbtUint, EsdCube, true);
     }
     | TEXTURE2DRECT {
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
@@ -3115,6 +3566,116 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.setImage(EbtUint, Esd2D, true, false, true);
     }
+    | I64IMAGE1D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, Esd1D);
+    }
+    | U64IMAGE1D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, Esd1D);
+    }
+    | I64IMAGE2D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, Esd2D);
+    }
+    | U64IMAGE2D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, Esd2D);
+    }
+    | I64IMAGE3D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, Esd3D);
+    }
+    | U64IMAGE3D {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, Esd3D);
+    }
+    | I64IMAGE2DRECT {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, EsdRect);
+    }
+    | U64IMAGE2DRECT {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, EsdRect);
+    }
+    | I64IMAGECUBE {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, EsdCube);
+    }
+    | U64IMAGECUBE {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, EsdCube);
+    }
+    | I64IMAGEBUFFER {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, EsdBuffer);
+    }
+    | U64IMAGEBUFFER {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, EsdBuffer);
+    }
+    | I64IMAGE1DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, Esd1D, true);
+    }
+    | U64IMAGE1DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, Esd1D, true);
+    }
+    | I64IMAGE2DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, Esd2D, true);
+    }
+    | U64IMAGE2DARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, Esd2D, true);
+    }
+    | I64IMAGECUBEARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, EsdCube, true);
+    }
+    | U64IMAGECUBEARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, EsdCube, true);
+    }
+    | I64IMAGE2DMS {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, Esd2D, false, false, true);
+    }
+    | U64IMAGE2DMS {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, Esd2D, false, false, true);
+    }
+    | I64IMAGE2DMSARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtInt64, Esd2D, true, false, true);
+    }
+    | U64IMAGE2DMSARRAY {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setImage(EbtUint64, Esd2D, true, false, true);
+    }
     | SAMPLEREXTERNALOES {  // GL_OES_EGL_image_external
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtSampler;
@@ -3126,6 +3687,24 @@ type_specifier_nonarray
         $$.basicType = EbtSampler;
         $$.sampler.set(EbtFloat, Esd2D);
         $$.sampler.yuv = true;
+    }
+    | ATTACHMENTEXT {
+        parseContext.requireStage($1.loc, EShLangFragment, "attachmentEXT input");
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setAttachmentEXT(EbtFloat);
+    }
+    | IATTACHMENTEXT {
+        parseContext.requireStage($1.loc, EShLangFragment, "attachmentEXT input");
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setAttachmentEXT(EbtInt);
+    }
+    | UATTACHMENTEXT {
+        parseContext.requireStage($1.loc, EShLangFragment, "attachmentEXT input");
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtSampler;
+        $$.sampler.setAttachmentEXT(EbtUint);
     }
     | SUBPASSINPUT {
         parseContext.requireStage($1.loc, EShLangFragment, "subpass input");
@@ -3178,24 +3757,77 @@ type_specifier_nonarray
         $$.sampler.setSubpass(EbtUint, true);
     }
     | FCOOPMATNV {
-        parseContext.fcoopmatCheck($1.loc, "fcoopmatNV", parseContext.symbolTable.atBuiltInLevel());
+        parseContext.fcoopmatCheckNV($1.loc, "fcoopmatNV", parseContext.symbolTable.atBuiltInLevel());
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtFloat;
-        $$.coopmat = true;
+        $$.coopmatNV = true;
+        $$.coopmatKHR = false;
     }
     | ICOOPMATNV {
-        parseContext.intcoopmatCheck($1.loc, "icoopmatNV", parseContext.symbolTable.atBuiltInLevel());
+        parseContext.intcoopmatCheckNV($1.loc, "icoopmatNV", parseContext.symbolTable.atBuiltInLevel());
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtInt;
-        $$.coopmat = true;
+        $$.coopmatNV = true;
+        $$.coopmatKHR = false;
     }
     | UCOOPMATNV {
-        parseContext.intcoopmatCheck($1.loc, "ucoopmatNV", parseContext.symbolTable.atBuiltInLevel());
+        parseContext.intcoopmatCheckNV($1.loc, "ucoopmatNV", parseContext.symbolTable.atBuiltInLevel());
         $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
         $$.basicType = EbtUint;
-        $$.coopmat = true;
+        $$.coopmatNV = true;
+        $$.coopmatKHR = false;
     }
-
+    | COOPMAT {
+        parseContext.coopmatCheck($1.loc, "coopmat", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtCoopmat;
+        $$.coopmatNV = false;
+        $$.coopmatKHR = true;
+    }
+    | TENSORLAYOUTNV {
+        parseContext.tensorLayoutViewCheck($1.loc, "tensorLayoutNV", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtTensorLayoutNV;
+    }
+    | TENSORVIEWNV {
+        parseContext.tensorLayoutViewCheck($1.loc, "tensorViewNV", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtTensorViewNV;
+    }
+    | FUNCTION {
+        $$.init($1.loc);
+        $$.basicType = EbtFunction;
+    }
+    | COOPVECNV {
+        parseContext.coopvecCheck($1.loc, "coopvecNV", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtCoopvecNV;
+        $$.coopvecNV = true;
+    }
+    | TENSORARM {
+        parseContext.tensorCheckARM($1.loc, "tensorARM", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.tensorRankARM = 1; // placeholder value
+        $$.basicType = EbtTensorARM;
+    }
+    | VECTOR {
+        parseContext.longVectorCheck($1.loc, "vector", parseContext.symbolTable.atBuiltInLevel());
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.basicType = EbtLongVector;
+        $$.longVector = true;
+    }
+    | spirv_type_specifier {
+        parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_spirv_intrinsics, "SPIR-V type specifier");
+        $$ = $1;
+    }
+    | HITOBJECTNV {
+       $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+       $$.basicType = EbtHitObjectNV;
+    }
+    | HITOBJECTEXT {
+       $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+       $$.basicType = EbtHitObjectEXT;
+    }
     | struct_specifier {
         $$ = $1;
         $$.qualifier.storage = parseContext.symbolTable.atGlobalLevel() ? EvqGlobal : EvqTemporary;
@@ -3211,6 +3843,8 @@ type_specifier_nonarray
             $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
             $$.basicType = EbtStruct;
             $$.userDef = &structure;
+            if (structure.getQualifier().isBufferType())
+                $$.qualifier = structure.getQualifier();
         } else
             parseContext.error($1.loc, "expected type name", $1.string->c_str(), "");
     }
@@ -3238,9 +3872,14 @@ struct_specifier
     : STRUCT IDENTIFIER LEFT_BRACE { parseContext.nestedStructCheck($1.loc); } struct_declaration_list RIGHT_BRACE {
         TType* structure = new TType($5, *$2.string);
         parseContext.structArrayCheck($2.loc, *structure);
+
         TVariable* userTypeDef = new TVariable($2.string, *structure, true);
         if (! parseContext.symbolTable.insert(*userTypeDef))
             parseContext.error($2.loc, "redefinition", $2.string->c_str(), "struct");
+        else if (parseContext.spvVersion.vulkanRelaxed
+                 && structure->containsOpaque())
+            parseContext.relaxedSymbols.push_back(structure->getTypeName());
+
         $$.init($1.loc);
         $$.basicType = EbtStruct;
         $$.userDef = structure;
@@ -3272,6 +3911,58 @@ struct_declaration_list
     ;
 
 struct_declaration
+    : struct_declaration_no_inline_block {
+        $$ = $1;
+    }
+    | block_heap_inner_structure struct_declarator_list SEMICOLON {
+        $$ = $2;
+        parseContext.voidErrorCheck($1.loc, (*$2)[0].type->getFieldName(), $1.basicType);
+        parseContext.precisionQualifierCheck($1.loc, $1.basicType, $1.qualifier, $1.hasTypeParameter());
+
+        for (unsigned int i = 0; i < $$->size(); ++i) {
+            TType type($1);
+            type.setFieldName((*$$)[i].type->getFieldName());
+            type.transferArraySizes((*$$)[i].type->getArraySizes());
+            type.copyArrayInnerSizes($1.arraySizes);
+            parseContext.arrayOfArrayVersionCheck((*$$)[i].loc, type.getArraySizes());
+            (*$$)[i].type->shallowCopy(type);
+        }
+    }
+    ;
+
+block_heap_inner_structure
+    : type_qualifier LEFT_BRACE { parseContext.nestedBlockCheck($1.loc, true); } struct_declaration_no_inline_block_list RIGHT_BRACE {
+        --parseContext.blockNestingLevel;
+        parseContext.globalQualifierFixCheck($1.loc, $1.qualifier);
+        parseContext.checkNoShaderLayouts($1.loc, $1.shaderQualifiers);
+        $$.init($1.loc);
+        TType* innerStructure = new TType($4, TString(""), $1.qualifier);
+        if (! $1.qualifier.hasBufferReference())
+            parseContext.error($1.loc, "only buffer_reference blocks can be declared inline inside a heap block", "", "");
+        TType* referenceType = new TType(EbtReference, *innerStructure, TString(""));
+        $$.basicType = EbtReference;
+        $$.userDef = referenceType;
+        $$.qualifier.layoutDescriptorHeap = true;
+    }
+    ;
+
+struct_declaration_no_inline_block_list
+    : struct_declaration_no_inline_block {
+        $$ = $1;
+    }
+    | struct_declaration_no_inline_block_list struct_declaration_no_inline_block {
+        $$ = $1;
+        for (unsigned int i = 0; i < $2->size(); ++i) {
+            for (unsigned int j = 0; j < $$->size(); ++j) {
+                if ((*$$)[j].type->getFieldName() == (*$2)[i].type->getFieldName())
+                    parseContext.error((*$2)[i].loc, "duplicate member name:", "", (*$2)[i].type->getFieldName().c_str());
+            }
+            $$->push_back((*$2)[i]);
+        }
+    }
+    ;
+
+struct_declaration_no_inline_block
     : type_specifier struct_declarator_list SEMICOLON {
         if ($1.arraySizes) {
             parseContext.profileRequires($1.loc, ENoProfile, 120, E_GL_3DL_array_objects, "arrayed type");
@@ -3283,7 +3974,7 @@ struct_declaration
         $$ = $2;
 
         parseContext.voidErrorCheck($1.loc, (*$2)[0].type->getFieldName(), $1.basicType);
-        parseContext.precisionQualifierCheck($1.loc, $1.basicType, $1.qualifier);
+        parseContext.precisionQualifierCheck($1.loc, $1.basicType, $1.qualifier, $1.hasTypeParameter());
 
         for (unsigned int i = 0; i < $$->size(); ++i) {
             TType type($1);
@@ -3307,7 +3998,7 @@ struct_declaration
         parseContext.memberQualifierCheck($1);
         parseContext.voidErrorCheck($2.loc, (*$3)[0].type->getFieldName(), $2.basicType);
         parseContext.mergeQualifiers($2.loc, $2.qualifier, $1.qualifier, true);
-        parseContext.precisionQualifierCheck($2.loc, $2.basicType, $2.qualifier);
+        parseContext.precisionQualifierCheck($2.loc, $2.basicType, $2.qualifier, $2.hasTypeParameter());
 
         for (unsigned int i = 0; i < $$->size(); ++i) {
             TType type($2);
@@ -3350,7 +4041,6 @@ initializer
     : assignment_expression {
         $$ = $1;
     }
-
     | LEFT_BRACE initializer_list RIGHT_BRACE {
         const char* initFeature = "{ } style initializers";
         parseContext.requireProfile($1.loc, ~EEsProfile, initFeature);
@@ -3363,9 +4053,13 @@ initializer
         parseContext.profileRequires($1.loc, ~EEsProfile, 420, E_GL_ARB_shading_language_420pack, initFeature);
         $$ = $2;
     }
-
+    | LEFT_BRACE RIGHT_BRACE {
+        const char* initFeature = "empty { } initializer";
+        parseContext.profileRequires($1.loc, EEsProfile, 0, E_GL_EXT_null_initializer, initFeature);
+        parseContext.profileRequires($1.loc, ~EEsProfile, 0, E_GL_EXT_null_initializer, initFeature);
+        $$ = parseContext.intermediate.makeAggregate($1.loc);
+    }
     ;
-
 
 initializer_list
     : initializer {
@@ -3375,7 +4069,6 @@ initializer_list
         $$ = parseContext.intermediate.growAggregate($1, $3);
     }
     ;
-
 
 declaration_statement
     : declaration { $$ = $1; }
@@ -3396,11 +4089,8 @@ simple_statement
     | case_label            { $$ = $1; }
     | iteration_statement   { $$ = $1; }
     | jump_statement        { $$ = $1; }
-
     | demote_statement      { $$ = $1; }
-
     ;
-
 
 demote_statement
     : DEMOTE SEMICOLON {
@@ -3409,7 +4099,6 @@ demote_statement
         $$ = parseContext.intermediate.addBranch(EOpDemote, $1.loc);
     }
     ;
-
 
 compound_statement
     : LEFT_BRACE RIGHT_BRACE { $$ = 0; }
@@ -3422,8 +4111,10 @@ compound_statement
         --parseContext.statementNestingLevel;
     }
       RIGHT_BRACE {
-        if ($3 && $3->getAsAggregate())
-            $3->getAsAggregate()->setOperator(EOpSequence);
+        if ($3 && $3->getAsAggregate()) {
+            $3->getAsAggregate()->setOperator(parseContext.intermediate.getDebugInfo() ? EOpScope : EOpSequence);
+            $3->getAsAggregate()->setEndLoc($5.loc);
+        }
         $$ = $3;
     }
     ;
@@ -3459,8 +4150,10 @@ compound_statement_no_new_scope
         $$ = 0;
     }
     | LEFT_BRACE statement_list RIGHT_BRACE {
-        if ($2 && $2->getAsAggregate())
+        if ($2 && $2->getAsAggregate()) {
             $2->getAsAggregate()->setOperator(EOpSequence);
+            $2->getAsAggregate()->setEndLoc($3.loc);
+        }
         $$ = $2;
     }
     ;
@@ -3493,12 +4186,11 @@ selection_statement
     : selection_statement_nonattributed {
         $$ = $1;
     }
-
     | attribute selection_statement_nonattributed {
+        parseContext.requireExtensions($2->getLoc(), 1, &E_GL_EXT_control_flow_attributes, "attribute");
         parseContext.handleSelectionAttributes(*$1, $2);
         $$ = $2;
     }
-
 
 selection_statement_nonattributed
     : IF LEFT_PAREN expression RIGHT_PAREN selection_rest_statement {
@@ -3528,11 +4220,7 @@ condition
         parseContext.boolCheck($2.loc, $1);
 
         TType type($1);
-        TIntermNode* initNode = parseContext.declareVariable($2.loc, *$2.string, $1, 0, $4);
-        if (initNode)
-            $$ = initNode->getAsTyped();
-        else
-            $$ = 0;
+        $$ = parseContext.declareVariable($2.loc, *$2.string, $1, 0, $4);
     }
     ;
 
@@ -3540,12 +4228,11 @@ switch_statement
     : switch_statement_nonattributed {
         $$ = $1;
     }
-
     | attribute switch_statement_nonattributed {
+        parseContext.requireExtensions($2->getLoc(), 1, &E_GL_EXT_control_flow_attributes, "attribute");
         parseContext.handleSwitchAttributes(*$1, $2);
         $$ = $2;
     }
-
 
 switch_statement_nonattributed
     : SWITCH LEFT_PAREN expression RIGHT_PAREN {
@@ -3604,12 +4291,12 @@ iteration_statement
     : iteration_statement_nonattributed {
         $$ = $1;
     }
-
     | attribute iteration_statement_nonattributed {
+        const char * extensions[3] = { E_GL_EXT_control_flow_attributes, E_GL_EXT_control_flow_attributes2, E_GL_QCOM_multiple_wait_queues };
+        parseContext.requireExtensions($2->getLoc(), 3, extensions, "attribute");
         parseContext.handleLoopAttributes(*$1, $2);
         $$ = $2;
     }
-
 
 iteration_statement_nonattributed
     : WHILE LEFT_PAREN {
@@ -3623,11 +4310,16 @@ iteration_statement_nonattributed
       condition RIGHT_PAREN statement_no_new_scope {
         parseContext.symbolTable.pop(&parseContext.defaultPrecision[0]);
         $$ = parseContext.intermediate.addLoop($6, $4, 0, true, $1.loc);
+        if (parseContext.intermediate.getDebugInfo()) {
+            $$ = parseContext.intermediate.makeAggregate($$, $1.loc);
+            $$->getAsAggregate()->setOperator(EOpScope);
+        }
         --parseContext.loopNestingLevel;
         --parseContext.statementNestingLevel;
         --parseContext.controlFlowNestingLevel;
     }
     | DO {
+        parseContext.symbolTable.push();
         ++parseContext.loopNestingLevel;
         ++parseContext.statementNestingLevel;
         ++parseContext.controlFlowNestingLevel;
@@ -3639,6 +4331,11 @@ iteration_statement_nonattributed
         parseContext.boolCheck($8.loc, $6);
 
         $$ = parseContext.intermediate.addLoop($3, $6, 0, false, $4.loc);
+        if (parseContext.intermediate.getDebugInfo()) {
+            $$ = parseContext.intermediate.makeAggregate($$, $4.loc);
+            $$->getAsAggregate()->setOperator(EOpScope);
+        }
+        parseContext.symbolTable.pop(&parseContext.defaultPrecision[0]);
         --parseContext.loopNestingLevel;
         --parseContext.statementNestingLevel;
         --parseContext.controlFlowNestingLevel;
@@ -3656,7 +4353,7 @@ iteration_statement_nonattributed
         if (! parseContext.limits.nonInductiveForLoops)
             parseContext.inductiveLoopCheck($1.loc, $4, forLoop);
         $$ = parseContext.intermediate.growAggregate($$, forLoop, $1.loc);
-        $$->getAsAggregate()->setOperator(EOpSequence);
+        $$->getAsAggregate()->setOperator(parseContext.intermediate.getDebugInfo() ? EOpScope : EOpSequence);
         --parseContext.loopNestingLevel;
         --parseContext.statementNestingLevel;
         --parseContext.controlFlowNestingLevel;
@@ -3717,6 +4414,18 @@ jump_statement
         parseContext.requireStage($1.loc, EShLangFragment, "discard");
         $$ = parseContext.intermediate.addBranch(EOpKill, $1.loc);
     }
+    | TERMINATE_INVOCATION SEMICOLON {
+        parseContext.requireStage($1.loc, EShLangFragment, "terminateInvocation");
+        $$ = parseContext.intermediate.addBranch(EOpTerminateInvocation, $1.loc);
+    }
+    | TERMINATE_RAY SEMICOLON {
+        parseContext.requireStage($1.loc, EShLangAnyHit, "terminateRayEXT");
+        $$ = parseContext.intermediate.addBranch(EOpTerminateRayKHR, $1.loc);
+    }
+    | IGNORE_INTERSECTION SEMICOLON {
+        parseContext.requireStage($1.loc, EShLangAnyHit, "ignoreIntersectionEXT");
+        $$ = parseContext.intermediate.addBranch(EOpIgnoreIntersectionKHR, $1.loc);
+    }
     ;
 
 // Grammar Note:  No 'goto'.  Gotos are not supported.
@@ -3741,19 +4450,25 @@ external_declaration
     | declaration {
         $$ = $1;
     }
-
     | SEMICOLON {
         parseContext.requireProfile($1.loc, ~EEsProfile, "extraneous semicolon");
         parseContext.profileRequires($1.loc, ~EEsProfile, 460, nullptr, "extraneous semicolon");
         $$ = nullptr;
     }
-
     ;
 
 function_definition
     : function_prototype {
         $1.function = parseContext.handleFunctionDeclarator($1.loc, *$1.function, false /* not prototype */);
         $1.intermNode = parseContext.handleFunctionDefinition($1.loc, *$1.function);
+
+        // For ES 100 only, according to ES shading language 100 spec: A function
+        // body has a scope nested inside the function's definition.
+        if (parseContext.profile == EEsProfile && parseContext.version == 100)
+        {
+            parseContext.symbolTable.push();
+            ++parseContext.statementNestingLevel;
+        }
     }
     compound_statement_no_new_scope {
         //   May be best done as post process phase on intermediate code
@@ -3761,6 +4476,8 @@ function_definition
             parseContext.error($1.loc, "function does not return a value:", "", $1.function->getName().c_str());
         parseContext.symbolTable.pop(&parseContext.defaultPrecision[0]);
         $$ = parseContext.intermediate.growAggregate($1.intermNode, $3);
+        $$->getAsAggregate()->setLinkType($1.function->getLinkType());
+        $$->getAsAggregate()->setFunctionControl($1.function->getFunctionControl());
         parseContext.intermediate.setAggregateOperator($$, EOpFunction, $1.function->getType(), $1.loc);
         $$->getAsAggregate()->setName($1.function->getMangledName().c_str());
 
@@ -3769,14 +4486,23 @@ function_definition
         $$->getAsAggregate()->setOptimize(parseContext.contextPragma.optimize);
         $$->getAsAggregate()->setDebug(parseContext.contextPragma.debug);
         $$->getAsAggregate()->setPragmaTable(parseContext.contextPragma.pragmaTable);
+
+        // Set currentFunctionType to empty pointer when goes outside of the function
+        parseContext.currentFunctionType = nullptr;
+
+        // For ES 100 only, according to ES shading language 100 spec: A function
+        // body has a scope nested inside the function's definition.
+        if (parseContext.profile == EEsProfile && parseContext.version == 100)
+        {
+            parseContext.symbolTable.pop(&parseContext.defaultPrecision[0]);
+            --parseContext.statementNestingLevel;
+        }
     }
     ;
-
 
 attribute
     : LEFT_BRACKET LEFT_BRACKET attribute_list RIGHT_BRACKET RIGHT_BRACKET {
         $$ = $3;
-        parseContext.requireExtensions($1.loc, 1, &E_GL_EXT_control_flow_attributes, "attribute");
     }
 
 attribute_list
@@ -3794,6 +4520,288 @@ single_attribute
     | IDENTIFIER LEFT_PAREN constant_expression RIGHT_PAREN {
         $$ = parseContext.makeAttributes(*$1.string, $3);
     }
+    | INLINE {
+        $$ = parseContext.makeAttributes(TString("inline"));
+    }
+    | NOINLINE {
+        $$ = parseContext.makeAttributes(TString("noinline"));
+    }
 
+spirv_requirements_list
+    : spirv_requirements_parameter {
+        $$ = $1;
+    }
+    | spirv_requirements_list COMMA spirv_requirements_parameter {
+        $$ = parseContext.mergeSpirvRequirements($2.loc, $1, $3);
+    }
+
+spirv_requirements_parameter
+    : IDENTIFIER EQUAL LEFT_BRACKET spirv_extension_list RIGHT_BRACKET {
+        $$ = parseContext.makeSpirvRequirement($2.loc, *$1.string, $4->getAsAggregate(), nullptr);
+    }
+    | IDENTIFIER EQUAL LEFT_BRACKET spirv_capability_list RIGHT_BRACKET {
+        $$ = parseContext.makeSpirvRequirement($2.loc, *$1.string, nullptr, $4->getAsAggregate());
+    }
+
+spirv_extension_list
+    : STRING_LITERAL {
+        $$ = parseContext.intermediate.makeAggregate(parseContext.intermediate.addConstantUnion($1.string, $1.loc, true));
+    }
+    | spirv_extension_list COMMA STRING_LITERAL {
+        $$ = parseContext.intermediate.growAggregate($1, parseContext.intermediate.addConstantUnion($3.string, $3.loc, true));
+    }
+
+spirv_capability_list
+    : INTCONSTANT {
+        $$ = parseContext.intermediate.makeAggregate(parseContext.intermediate.addConstantUnion($1.i, $1.loc, true));
+    }
+    | spirv_capability_list COMMA INTCONSTANT {
+        $$ = parseContext.intermediate.growAggregate($1, parseContext.intermediate.addConstantUnion($3.i, $3.loc, true));
+    }
+
+spirv_execution_mode_qualifier
+    : SPIRV_EXECUTION_MODE LEFT_PAREN INTCONSTANT RIGHT_PAREN {
+        parseContext.intermediate.insertSpirvExecutionMode($3.i);
+        $$ = 0;
+    }
+    | SPIRV_EXECUTION_MODE LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT RIGHT_PAREN {
+        parseContext.intermediate.insertSpirvRequirement($3);
+        parseContext.intermediate.insertSpirvExecutionMode($5.i);
+        $$ = 0;
+    }
+    | SPIRV_EXECUTION_MODE LEFT_PAREN INTCONSTANT COMMA spirv_execution_mode_parameter_list RIGHT_PAREN {
+        parseContext.intermediate.insertSpirvExecutionMode($3.i, $5->getAsAggregate());
+        $$ = 0;
+    }
+    | SPIRV_EXECUTION_MODE LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT COMMA spirv_execution_mode_parameter_list RIGHT_PAREN {
+        parseContext.intermediate.insertSpirvRequirement($3);
+        parseContext.intermediate.insertSpirvExecutionMode($5.i, $7->getAsAggregate());
+        $$ = 0;
+    }
+    | SPIRV_EXECUTION_MODE_ID LEFT_PAREN INTCONSTANT COMMA spirv_execution_mode_id_parameter_list RIGHT_PAREN {
+        parseContext.intermediate.insertSpirvExecutionModeId($3.i, $5->getAsAggregate());
+        $$ = 0;
+    }
+    | SPIRV_EXECUTION_MODE_ID LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT COMMA spirv_execution_mode_id_parameter_list RIGHT_PAREN {
+        parseContext.intermediate.insertSpirvRequirement($3);
+        parseContext.intermediate.insertSpirvExecutionModeId($5.i, $7->getAsAggregate());
+        $$ = 0;
+    }
+
+spirv_execution_mode_parameter_list
+    : spirv_execution_mode_parameter {
+        $$ = parseContext.intermediate.makeAggregate($1);
+    }
+    | spirv_execution_mode_parameter_list COMMA spirv_execution_mode_parameter {
+        $$ = parseContext.intermediate.growAggregate($1, $3);
+    }
+
+spirv_execution_mode_parameter
+    : FLOATCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloat, $1.loc, true);
+    }
+    | INTCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.i, $1.loc, true);
+    }
+    | UINTCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.u, $1.loc, true);
+    }
+    | BOOLCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.b, $1.loc, true);
+    }
+    | STRING_LITERAL {
+        $$ = parseContext.intermediate.addConstantUnion($1.string, $1.loc, true);
+    }
+
+spirv_execution_mode_id_parameter_list
+    : constant_expression {
+        if ($1->getBasicType() != EbtFloat &&
+            $1->getBasicType() != EbtInt &&
+            $1->getBasicType() != EbtUint &&
+            $1->getBasicType() != EbtBool &&
+            $1->getBasicType() != EbtString)
+            parseContext.error($1->getLoc(), "this type not allowed", $1->getType().getBasicString(), "");
+        $$ = parseContext.intermediate.makeAggregate($1);
+    }
+    | spirv_execution_mode_id_parameter_list COMMA constant_expression {
+        if ($3->getBasicType() != EbtFloat &&
+            $3->getBasicType() != EbtInt &&
+            $3->getBasicType() != EbtUint &&
+            $3->getBasicType() != EbtBool &&
+            $3->getBasicType() != EbtString)
+            parseContext.error($3->getLoc(), "this type not allowed", $3->getType().getBasicString(), "");
+        $$ = parseContext.intermediate.growAggregate($1, $3);
+    }
+
+spirv_storage_class_qualifier
+    : SPIRV_STORAGE_CLASS LEFT_PAREN INTCONSTANT RIGHT_PAREN {
+        $$.init($1.loc);
+        $$.qualifier.storage = EvqSpirvStorageClass;
+        $$.qualifier.spirvStorageClass = $3.i;
+    }
+    | SPIRV_STORAGE_CLASS LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT RIGHT_PAREN {
+        $$.init($1.loc);
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$.qualifier.storage = EvqSpirvStorageClass;
+        $$.qualifier.spirvStorageClass = $5.i;
+    }
+
+spirv_decorate_qualifier
+    : SPIRV_DECORATE LEFT_PAREN INTCONSTANT RIGHT_PAREN{
+        $$.init($1.loc);
+        $$.qualifier.setSpirvDecorate($3.i);
+    }
+    | SPIRV_DECORATE LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT RIGHT_PAREN{
+        $$.init($1.loc);
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$.qualifier.setSpirvDecorate($5.i);
+    }
+    | SPIRV_DECORATE LEFT_PAREN INTCONSTANT COMMA spirv_decorate_parameter_list RIGHT_PAREN {
+        $$.init($1.loc);
+        $$.qualifier.setSpirvDecorate($3.i, $5->getAsAggregate());
+    }
+    | SPIRV_DECORATE LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT COMMA spirv_decorate_parameter_list RIGHT_PAREN {
+        $$.init($1.loc);
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$.qualifier.setSpirvDecorate($5.i, $7->getAsAggregate());
+    }
+    | SPIRV_DECORATE_ID LEFT_PAREN INTCONSTANT COMMA spirv_decorate_id_parameter_list RIGHT_PAREN {
+        $$.init($1.loc);
+        $$.qualifier.setSpirvDecorateId($3.i, $5->getAsAggregate());
+    }
+    | SPIRV_DECORATE_ID LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT COMMA spirv_decorate_id_parameter_list RIGHT_PAREN {
+        $$.init($1.loc);
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$.qualifier.setSpirvDecorateId($5.i, $7->getAsAggregate());
+    }
+    | SPIRV_DECORATE_STRING LEFT_PAREN INTCONSTANT COMMA spirv_decorate_string_parameter_list RIGHT_PAREN {
+        $$.init($1.loc);
+        $$.qualifier.setSpirvDecorateString($3.i, $5->getAsAggregate());
+    }
+    | SPIRV_DECORATE_STRING LEFT_PAREN spirv_requirements_list COMMA INTCONSTANT COMMA spirv_decorate_string_parameter_list RIGHT_PAREN {
+        $$.init($1.loc);
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$.qualifier.setSpirvDecorateString($5.i, $7->getAsAggregate());
+    }
+
+spirv_decorate_parameter_list
+    : spirv_decorate_parameter {
+        $$ = parseContext.intermediate.makeAggregate($1);
+    }
+    | spirv_decorate_parameter_list COMMA spirv_decorate_parameter {
+        $$ = parseContext.intermediate.growAggregate($1, $3);
+    }
+
+spirv_decorate_parameter
+    : FLOATCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloat, $1.loc, true);
+    }
+    | INTCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.i, $1.loc, true);
+    }
+    | UINTCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.u, $1.loc, true);
+    }
+    | BOOLCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.b, $1.loc, true);
+    }
+
+spirv_decorate_id_parameter_list
+    : spirv_decorate_id_parameter {
+        $$ = parseContext.intermediate.makeAggregate($1);
+    }
+    | spirv_decorate_id_parameter_list COMMA spirv_decorate_id_parameter {
+        $$ = parseContext.intermediate.growAggregate($1, $3);
+    }
+
+spirv_decorate_id_parameter
+    : variable_identifier {
+        if ($1->getAsConstantUnion() || $1->getAsSymbolNode())
+            $$ = $1;
+        else
+            parseContext.error($1->getLoc(), "only allow constants or variables which are not elements of a composite", "", "");
+    }
+    | FLOATCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.d, EbtFloat, $1.loc, true);
+    }
+    | INTCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.i, $1.loc, true);
+    }
+    | UINTCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.u, $1.loc, true);
+    }
+    | BOOLCONSTANT {
+        $$ = parseContext.intermediate.addConstantUnion($1.b, $1.loc, true);
+    }
+
+spirv_decorate_string_parameter_list
+    : STRING_LITERAL {
+        $$ = parseContext.intermediate.makeAggregate(
+            parseContext.intermediate.addConstantUnion($1.string, $1.loc, true));
+    }
+    | spirv_decorate_string_parameter_list COMMA STRING_LITERAL {
+        $$ = parseContext.intermediate.growAggregate($1, parseContext.intermediate.addConstantUnion($3.string, $3.loc, true));
+    }
+
+spirv_type_specifier
+    : SPIRV_TYPE LEFT_PAREN spirv_instruction_qualifier_list COMMA spirv_type_parameter_list RIGHT_PAREN {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.setSpirvType(*$3, $5);
+    }
+    | SPIRV_TYPE LEFT_PAREN spirv_requirements_list COMMA spirv_instruction_qualifier_list COMMA spirv_type_parameter_list RIGHT_PAREN {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$.setSpirvType(*$5, $7);
+    }
+    | SPIRV_TYPE LEFT_PAREN spirv_instruction_qualifier_list RIGHT_PAREN {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        $$.setSpirvType(*$3);
+    }
+    | SPIRV_TYPE LEFT_PAREN spirv_requirements_list COMMA spirv_instruction_qualifier_list RIGHT_PAREN {
+        $$.init($1.loc, parseContext.symbolTable.atGlobalLevel());
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$.setSpirvType(*$5);
+    }
+
+spirv_type_parameter_list
+    : spirv_type_parameter {
+        $$ = $1;
+    }
+    | spirv_type_parameter_list COMMA spirv_type_parameter {
+        $$ = parseContext.mergeSpirvTypeParameters($1, $3);
+    }
+
+spirv_type_parameter
+    : constant_expression {
+        $$ = parseContext.makeSpirvTypeParameters($1->getLoc(), $1->getAsConstantUnion());
+    }
+    | type_specifier_nonarray {
+        $$ = parseContext.makeSpirvTypeParameters($1.loc, $1);
+    }
+
+spirv_instruction_qualifier
+    : SPIRV_INSTRUCTION LEFT_PAREN spirv_instruction_qualifier_list RIGHT_PAREN {
+        $$ = $3;
+    }
+    | SPIRV_INSTRUCTION LEFT_PAREN spirv_requirements_list COMMA spirv_instruction_qualifier_list RIGHT_PAREN {
+        parseContext.intermediate.insertSpirvRequirement($3);
+        $$ = $5;
+    }
+
+spirv_instruction_qualifier_list
+    : spirv_instruction_qualifier_id {
+        $$ = $1;
+    }
+    | spirv_instruction_qualifier_list COMMA spirv_instruction_qualifier_id {
+        $$ = parseContext.mergeSpirvInstruction($2.loc, $1, $3);
+    }
+
+spirv_instruction_qualifier_id
+    : IDENTIFIER EQUAL STRING_LITERAL {
+        $$ = parseContext.makeSpirvInstruction($2.loc, *$1.string, *$3.string);
+    }
+    | IDENTIFIER EQUAL INTCONSTANT {
+        $$ = parseContext.makeSpirvInstruction($2.loc, *$1.string, $3.i);
+    }
 
 %%

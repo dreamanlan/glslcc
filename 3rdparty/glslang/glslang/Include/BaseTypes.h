@@ -2,6 +2,7 @@
 // Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
 // Copyright (C) 2012-2013 LunarG, Inc.
 // Copyright (C) 2017 ARM Limited.
+// Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
 //
 // All rights reserved.
 //
@@ -48,6 +49,14 @@ enum TBasicType {
     EbtFloat,
     EbtDouble,
     EbtFloat16,
+    EbtBFloat16,
+    EbtFloatE5M2,
+    EbtFloatE4M3,
+    EbtFloatE2M1,
+    EbtFloatE3M2,
+    EbtFloatE2M3,
+    EbtFloatUE8M0,
+    EbtFloatMXINT8,
     EbtInt8,
     EbtUint8,
     EbtInt16,
@@ -61,8 +70,20 @@ enum TBasicType {
     EbtSampler,
     EbtStruct,
     EbtBlock,
-    EbtAccStructNV,
+    EbtAccStruct,
     EbtReference,
+    EbtRayQuery,
+    EbtHitObjectNV,
+    EbtHitObjectEXT,
+    EbtCoopmat,
+    EbtFunction,
+    EbtTensorLayoutNV,
+    EbtTensorViewNV,
+    EbtCoopvecNV,
+    EbtTensorARM,
+    EbtLongVector,
+    // SPIR-V type defined by spirv_type
+    EbtSpirvType,
 
     // HLSL types that live only temporarily.
     EbtString,
@@ -89,12 +110,17 @@ enum TStorageQualifier {
     EvqUniform,       // read only, shared with app
     EvqBuffer,        // read/write, shared with app
     EvqShared,        // compute shader's read/write 'shared' qualifier
+    EvqSpirvStorageClass, // spirv_storage_class
 
-    EvqPayloadNV,
-    EvqPayloadInNV,
-    EvqHitAttrNV,
-    EvqCallableDataNV,
-    EvqCallableDataInNV,
+    EvqPayload,
+    EvqPayloadIn,
+    EvqHitAttr,
+    EvqCallableData,
+    EvqCallableDataIn,
+    EvqHitObjectAttrNV,
+    EvqHitObjectAttrEXT,
+
+    EvqtaskPayloadSharedEXT,
 
     // parameters
     EvqIn,            // also, for 'in' in the grammar before we know if it's a pipeline input or an 'in' parameter
@@ -119,6 +145,13 @@ enum TStorageQualifier {
     // built-ins written by fragment shader
     EvqFragColor,
     EvqFragDepth,
+    EvqFragStencil,
+
+    EvqTileImageEXT,
+
+    // EXT_structured_descriptor_heap
+    EvqSamplerHeap,
+    EvqResourceHeap,
 
     // end of list
     EvqLast
@@ -226,8 +259,14 @@ enum TBuiltInVariable {
     EbvViewIndex,
     EbvDeviceIndex,
 
+    EbvShadingRateKHR,
+    EbvPrimitiveShadingRateKHR,
+
     EbvFragSizeEXT,
     EbvFragInvocationCountEXT,
+
+    EbvSecondaryFragDataEXT,
+    EbvSecondaryFragColorEXT,
 
     EbvViewportMaskNV,
     EbvSecondaryPositionNV,
@@ -238,23 +277,30 @@ enum TBuiltInVariable {
     EbvFragmentSizeNV,
     EbvInvocationsPerPixelNV,
     // ray tracing
-    EbvLaunchIdNV,
-    EbvLaunchSizeNV,
-    EbvInstanceCustomIndexNV,
-    EbvWorldRayOriginNV,
-    EbvWorldRayDirectionNV,
-    EbvObjectRayOriginNV,
-    EbvObjectRayDirectionNV,
-    EbvRayTminNV,
-    EbvRayTmaxNV,
-    EbvHitTNV,
-    EbvHitKindNV,
-    EbvObjectToWorldNV,
-    EbvWorldToObjectNV,
-    EbvIncomingRayFlagsNV,
+    EbvLaunchId,
+    EbvLaunchSize,
+    EbvInstanceCustomIndex,
+    EbvGeometryIndex,
+    EbvWorldRayOrigin,
+    EbvWorldRayDirection,
+    EbvObjectRayOrigin,
+    EbvObjectRayDirection,
+    EbvRayTmin,
+    EbvRayTmax,
+    EbvCullMask,
+    EbvHitKind,
+    EbvObjectToWorld,
+    EbvObjectToWorld3x4,
+    EbvWorldToObject,
+    EbvWorldToObject3x4,
+    EbvIncomingRayFlags,
+    EbvCurrentRayTimeNV,
+    EbvClusterIDNV,
     // barycentrics
     EbvBaryCoordNV,
     EbvBaryCoordNoPerspNV,
+    EbvBaryCoordEXT,
+    EbvBaryCoordNoPerspEXT,
     // mesh shaders
     EbvTaskCountNV,
     EbvPrimitiveCountNV,
@@ -264,6 +310,24 @@ enum TBuiltInVariable {
     EbvLayerPerViewNV,
     EbvMeshViewCountNV,
     EbvMeshViewIndicesNV,
+
+    EbvMicroTrianglePositionNV,
+    EbvMicroTriangleBaryNV,
+    EbvHitKindFrontFacingMicroTriangleNV,
+    EbvHitKindBackFacingMicroTriangleNV,
+
+    EbvHitIsSphereNV,
+    EbvHitIsLSSNV,
+    EbvHitSpherePositionNV,
+    EbvHitSphereRadiusNV,
+    EbvHitLSSPositionsNV,
+    EbvHitLSSRadiiNV,
+
+    //GL_EXT_mesh_shader
+    EbvPrimitivePointIndicesEXT,
+    EbvPrimitiveLineIndicesEXT,
+    EbvPrimitiveTriangleIndicesEXT,
+    EbvCullPrimitiveEXT,
 
     // sm builtins
     EbvWarpsPerSM,
@@ -286,6 +350,23 @@ enum TBuiltInVariable {
     EbvByteAddressBuffer,
     EbvRWByteAddressBuffer,
 
+    // ARM specific core builtins
+    EbvCoreCountARM,
+    EbvCoreIDARM,
+    EbvCoreMaxIDARM,
+    EbvWarpIDARM,
+    EbvWarpMaxIDARM,
+
+    EbvPositionFetch,
+
+    // SPV_QCOM_tile_shading
+    EbvTileOffsetQCOM,
+    EbvTileDimensionQCOM,
+    EbvTileApronSizeQCOM,
+    // GL_EXT_descriptor_heap
+    EbvSamplerHeapEXT,
+    EbvResourceHeapEXT,
+
     EbvLast
 };
 
@@ -298,10 +379,6 @@ enum TPrecisionQualifier {
     EpqHigh
 };
 
-#ifdef GLSLANG_WEB
-__inline const char* GetStorageQualifierString(TStorageQualifier q) { return ""; }
-__inline const char* GetPrecisionQualifierString(TPrecisionQualifier p) { return ""; }
-#else
 // These will show up in error messages
 __inline const char* GetStorageQualifierString(TStorageQualifier q)
 {
@@ -310,6 +387,7 @@ __inline const char* GetStorageQualifierString(TStorageQualifier q)
     case EvqGlobal:         return "global";         break;
     case EvqConst:          return "const";          break;
     case EvqConstReadOnly:  return "const (read only)"; break;
+    case EvqSpirvStorageClass: return "spirv_storage_class"; break;
     case EvqVaryingIn:      return "in";             break;
     case EvqVaryingOut:     return "out";            break;
     case EvqUniform:        return "uniform";        break;
@@ -328,11 +406,15 @@ __inline const char* GetStorageQualifierString(TStorageQualifier q)
     case EvqPointCoord:     return "gl_PointCoord";  break;
     case EvqFragColor:      return "fragColor";      break;
     case EvqFragDepth:      return "gl_FragDepth";   break;
-    case EvqPayloadNV:        return "rayPayloadNV";     break;
-    case EvqPayloadInNV:      return "rayPayloadInNV";   break;
-    case EvqHitAttrNV:        return "hitAttributeNV";   break;
-    case EvqCallableDataNV:   return "callableDataNV";   break;
-    case EvqCallableDataInNV: return "callableDataInNV"; break;
+    case EvqFragStencil:    return "gl_FragStencilRefARB"; break;
+    case EvqPayload:        return "rayPayloadNV";     break;
+    case EvqPayloadIn:      return "rayPayloadInNV";   break;
+    case EvqHitAttr:        return "hitAttributeNV";   break;
+    case EvqCallableData:   return "callableDataNV";   break;
+    case EvqCallableDataIn: return "callableDataInNV"; break;
+    case EvqtaskPayloadSharedEXT: return "taskPayloadSharedEXT"; break;
+    case EvqHitObjectAttrNV: return "hitObjectAttributeNV"; break;
+    case EvqHitObjectAttrEXT:return "hitObjectAttributeEXT"; break;
     default:                return "unknown qualifier";
     }
 }
@@ -428,6 +510,9 @@ __inline const char* GetBuiltInVariableString(TBuiltInVariable v)
     case EbvFragSizeEXT:                return "FragSizeEXT";
     case EbvFragInvocationCountEXT:     return "FragInvocationCountEXT";
 
+    case EbvSecondaryFragDataEXT:       return "SecondaryFragDataEXT";
+    case EbvSecondaryFragColorEXT:      return "SecondaryFragColorEXT";
+
     case EbvViewportMaskNV:             return "ViewportMaskNV";
     case EbvSecondaryPositionNV:        return "SecondaryPositionNV";
     case EbvSecondaryViewportMaskNV:    return "SecondaryViewportMaskNV";
@@ -436,23 +521,27 @@ __inline const char* GetBuiltInVariableString(TBuiltInVariable v)
     case EbvFragFullyCoveredNV:         return "FragFullyCoveredNV";
     case EbvFragmentSizeNV:             return "FragmentSizeNV";
     case EbvInvocationsPerPixelNV:      return "InvocationsPerPixelNV";
-    case EbvLaunchIdNV:                 return "LaunchIdNV";
-    case EbvLaunchSizeNV:               return "LaunchSizeNV";
-    case EbvInstanceCustomIndexNV:      return "InstanceCustomIndexNV";
-    case EbvWorldRayOriginNV:           return "WorldRayOriginNV";
-    case EbvWorldRayDirectionNV:        return "WorldRayDirectionNV";
-    case EbvObjectRayOriginNV:          return "ObjectRayOriginNV";
-    case EbvObjectRayDirectionNV:       return "ObjectRayDirectionNV";
-    case EbvRayTminNV:                  return "ObjectRayTminNV";
-    case EbvRayTmaxNV:                  return "ObjectRayTmaxNV";
-    case EbvHitTNV:                     return "HitTNV";
-    case EbvHitKindNV:                  return "HitKindNV";
-    case EbvIncomingRayFlagsNV:         return "IncomingRayFlagsNV";
-    case EbvObjectToWorldNV:            return "ObjectToWorldNV";
-    case EbvWorldToObjectNV:            return "WorldToObjectNV";
+    case EbvLaunchId:                   return "LaunchIdNV";
+    case EbvLaunchSize:                 return "LaunchSizeNV";
+    case EbvInstanceCustomIndex:        return "InstanceCustomIndexNV";
+    case EbvGeometryIndex:              return "GeometryIndexEXT";
+    case EbvWorldRayOrigin:             return "WorldRayOriginNV";
+    case EbvWorldRayDirection:          return "WorldRayDirectionNV";
+    case EbvObjectRayOrigin:            return "ObjectRayOriginNV";
+    case EbvObjectRayDirection:         return "ObjectRayDirectionNV";
+    case EbvRayTmin:                    return "ObjectRayTminNV";
+    case EbvRayTmax:                    return "ObjectRayTmaxNV";
+    case EbvHitKind:                    return "HitKindNV";
+    case EbvIncomingRayFlags:           return "IncomingRayFlagsNV";
+    case EbvObjectToWorld:              return "ObjectToWorldNV";
+    case EbvWorldToObject:              return "WorldToObjectNV";
+    case EbvCurrentRayTimeNV:           return "CurrentRayTimeNV";
+    case EbvClusterIDNV:                return "ClusterIDNV";
 
-    case EbvBaryCoordNV:                return "BaryCoordNV";
-    case EbvBaryCoordNoPerspNV:         return "BaryCoordNoPerspNV";
+    case EbvBaryCoordEXT:
+    case EbvBaryCoordNV:                return "BaryCoordKHR";
+    case EbvBaryCoordNoPerspEXT:
+    case EbvBaryCoordNoPerspNV:         return "BaryCoordNoPerspKHR";
 
     case EbvTaskCountNV:                return "TaskCountNV";
     case EbvPrimitiveCountNV:           return "PrimitiveCountNV";
@@ -462,11 +551,29 @@ __inline const char* GetBuiltInVariableString(TBuiltInVariable v)
     case EbvLayerPerViewNV:             return "LayerPerViewNV";
     case EbvMeshViewCountNV:            return "MeshViewCountNV";
     case EbvMeshViewIndicesNV:          return "MeshViewIndicesNV";
+    // GL_EXT_mesh_shader
+    case EbvPrimitivePointIndicesEXT:    return "PrimitivePointIndicesEXT";
+    case EbvPrimitiveLineIndicesEXT:     return "PrimitiveLineIndicesEXT";
+    case EbvPrimitiveTriangleIndicesEXT: return "PrimitiveTriangleIndicesEXT";
+    case EbvCullPrimitiveEXT:            return "CullPrimitiveEXT";
 
     case EbvWarpsPerSM:                 return "WarpsPerSMNV";
     case EbvSMCount:                    return "SMCountNV";
     case EbvWarpID:                     return "WarpIDNV";
     case EbvSMID:                       return "SMIDNV";
+
+    case EbvShadingRateKHR:             return "ShadingRateKHR";
+    case EbvPrimitiveShadingRateKHR:    return "PrimitiveShadingRateKHR";
+
+    case EbvHitKindFrontFacingMicroTriangleNV: return "HitKindFrontFacingMicroTriangleNV";
+    case EbvHitKindBackFacingMicroTriangleNV:  return "HitKindBackFacingMicroTriangleNV";
+
+    case EbvHitIsSphereNV:              return "HitIsSphereNV";
+    case EbvHitIsLSSNV:                 return "HitIsLSSNV";
+    case EbvHitSpherePositionNV:        return "HitSpherePositionNV";
+    case EbvHitSphereRadiusNV:          return "HitSphereRadiusNV";
+    case EbvHitLSSPositionsNV:          return "HitSpherePositionsNV";
+    case EbvHitLSSRadiiNV:              return "HitLSSRadiiNV";
 
     default:                      return "unknown built-in variable";
     }
@@ -482,7 +589,6 @@ __inline const char* GetPrecisionQualifierString(TPrecisionQualifier p)
     default:        return "unknown precision qualifier";
     }
 }
-#endif
 
 __inline bool isTypeSignedInt(TBasicType type)
 {
@@ -510,6 +616,22 @@ __inline bool isTypeUnsignedInt(TBasicType type)
     }
 }
 
+__inline TBasicType unsignedTypeToSigned(TBasicType type)
+{
+    switch (type) {
+    case EbtUint8:
+        return EbtInt8;
+    case EbtUint16:
+        return EbtInt16;
+    case EbtUint:
+        return EbtInt;
+    case EbtUint64:
+        return EbtInt64;
+    default:
+        return type;
+    }
+}
+
 __inline bool isTypeInt(TBasicType type)
 {
     return isTypeSignedInt(type) || isTypeUnsignedInt(type);
@@ -521,9 +643,65 @@ __inline bool isTypeFloat(TBasicType type)
     case EbtFloat:
     case EbtDouble:
     case EbtFloat16:
+    case EbtBFloat16:
+    case EbtFloatE5M2:
+    case EbtFloatE4M3:
+    case EbtFloatE2M1:
+    case EbtFloatE3M2:
+    case EbtFloatE2M3:
+    case EbtFloatUE8M0:
+    case EbtFloatMXINT8:
         return true;
     default:
         return false;
+    }
+}
+
+__inline bool isTypeOcpMicroscalingFloat(TBasicType type)
+{
+    switch (type) {
+    case EbtFloatE2M1:
+    case EbtFloatE3M2:
+    case EbtFloatE2M3:
+    case EbtFloatUE8M0:
+    case EbtFloatMXINT8:
+        return true;
+    default:
+        return false;
+    }
+}
+
+__inline uint32_t GetNumBits(TBasicType type)
+{
+    switch (type) {
+    case EbtFloatE2M1:
+        return 4;
+    case EbtFloatE3M2:
+    case EbtFloatE2M3:
+        return 6;
+    case EbtFloatUE8M0:
+    case EbtFloatMXINT8:
+    case EbtInt8:
+    case EbtUint8:
+    case EbtFloatE5M2:
+    case EbtFloatE4M3:
+        return 8;
+    case EbtBFloat16:
+    case EbtFloat16:
+    case EbtInt16:
+    case EbtUint16:
+        return 16;
+    case EbtInt:
+    case EbtUint:
+    case EbtFloat:
+        return 32;
+    case EbtDouble:
+    case EbtInt64:
+    case EbtUint64:
+        return 64;
+    default:
+        assert(false);
+        return 0;
     }
 }
 

@@ -1,5 +1,6 @@
 /*
- * Copyright 2016-2020 Arm Limited
+ * Copyright 2016-2021 Arm Limited
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,6 +13,12 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ */
+
+/*
+ * At your option, you may choose to accept this material under either:
+ *  1. The Apache License, Version 2.0, found at <http://www.apache.org/licenses/LICENSE-2.0>, or
+ *  2. The MIT License, found at <http://opensource.org/licenses/MIT>.
  */
 
 #ifndef SPIRV_CROSS_CFG_HPP
@@ -52,11 +59,16 @@ public:
 			return 0;
 	}
 
+	bool is_reachable(uint32_t block) const
+	{
+		return visit_order.count(block) != 0;
+	}
+
 	uint32_t get_visit_order(uint32_t block) const
 	{
 		auto itr = visit_order.find(block);
 		assert(itr != std::end(visit_order));
-		int v = itr->second.get();
+		int v = itr->second.order;
 		assert(v > 0);
 		return uint32_t(v);
 	}
@@ -102,22 +114,15 @@ public:
 private:
 	struct VisitOrder
 	{
-		int &get()
-		{
-			return v;
-		}
-
-		const int &get() const
-		{
-			return v;
-		}
-
-		int v = -1;
+		int order = -1;
+		bool visited_resolve = false;
+		bool visited_branches = false;
 	};
 
 	Compiler &compiler;
 	const SPIRFunction &func;
 	std::unordered_map<uint32_t, SmallVector<uint32_t>> preceding_edges;
+	std::unordered_map<uint32_t, SmallVector<uint32_t>> virtual_dominance_preceding_edges;
 	std::unordered_map<uint32_t, SmallVector<uint32_t>> succeeding_edges;
 	std::unordered_map<uint32_t, uint32_t> immediate_dominators;
 	std::unordered_map<uint32_t, VisitOrder> visit_order;
@@ -125,13 +130,20 @@ private:
 	SmallVector<uint32_t> empty_vector;
 
 	void add_branch(uint32_t from, uint32_t to);
+	void add_virtual_dominance_branch(uint32_t from, uint32_t to);
 	void build_post_order_visit_order();
 	void build_immediate_dominators();
-	bool post_order_visit(uint32_t block);
+	void post_order_visit_branches(uint32_t block);
+	void post_order_visit_resolve(uint32_t block);
+	void post_order_visit_entry(uint32_t block);
 	uint32_t visit_count = 0;
 
 	bool is_back_edge(uint32_t to) const;
-	bool has_visited_forward_edge(uint32_t to) const;
+	bool has_visited_branch(uint32_t to) const;
+	void visit_branch(uint32_t block_id);
+
+	SmallVector<uint32_t> visit_stack;
+	size_t last_visited_size = 0;
 };
 
 class DominatorBuilder

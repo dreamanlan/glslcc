@@ -38,22 +38,16 @@
 #define _COMPILER_INTERFACE_INCLUDED_
 
 #include "../Include/ResourceLimits.h"
+#include "../Include/visibility.h"
 #include "../MachineIndependent/Versions.h"
 
 #include <cstring>
 #include <vector>
 
 #ifdef _WIN32
-#define C_DECL __cdecl
-//#ifdef SH_EXPORTING
-//    #define SH_IMPORT_EXPORT __declspec(dllexport)
-//#else
-//    #define SH_IMPORT_EXPORT __declspec(dllimport)
-//#endif
-#define SH_IMPORT_EXPORT
+    #define C_DECL __cdecl
 #else
-#define SH_IMPORT_EXPORT
-#define C_DECL
+    #define C_DECL
 #endif
 
 //
@@ -65,22 +59,17 @@
     extern "C" {
 #endif
 
-// This should always increase, as some paths to do not consume
-// a more major number.
-// It should increment by one when new functionality is added.
-#define GLSLANG_MINOR_VERSION 13
-
 //
 // Call before doing any other compiler/linker operations.
 //
 // (Call once per process, not once per thread.)
 //
-SH_IMPORT_EXPORT int ShInitialize();
+GLSLANG_EXPORT int ShInitialize();
 
 //
 // Call this at process shutdown to clean up memory.
 //
-SH_IMPORT_EXPORT int ShFinalize();
+GLSLANG_EXPORT int ShFinalize();
 
 //
 // Types of languages the compiler can consume.
@@ -92,32 +81,49 @@ typedef enum {
     EShLangGeometry,
     EShLangFragment,
     EShLangCompute,
-    EShLangRayGenNV,
-    EShLangIntersectNV,
-    EShLangAnyHitNV,
-    EShLangClosestHitNV,
-    EShLangMissNV,
-    EShLangCallableNV,
-    EShLangTaskNV,
-    EShLangMeshNV,
-    EShLangCount,
+    EShLangRayGen,
+    EShLangRayGenNV = EShLangRayGen,
+    EShLangIntersect,
+    EShLangIntersectNV = EShLangIntersect,
+    EShLangAnyHit,
+    EShLangAnyHitNV = EShLangAnyHit,
+    EShLangClosestHit,
+    EShLangClosestHitNV = EShLangClosestHit,
+    EShLangMiss,
+    EShLangMissNV = EShLangMiss,
+    EShLangCallable,
+    EShLangCallableNV = EShLangCallable,
+    EShLangTask,
+    EShLangTaskNV = EShLangTask,
+    EShLangMesh,
+    EShLangMeshNV = EShLangMesh,
+    LAST_ELEMENT_MARKER(EShLangCount),
 } EShLanguage;         // would be better as stage, but this is ancient now
 
-typedef enum {
+typedef enum : unsigned {
     EShLangVertexMask         = (1 << EShLangVertex),
     EShLangTessControlMask    = (1 << EShLangTessControl),
     EShLangTessEvaluationMask = (1 << EShLangTessEvaluation),
     EShLangGeometryMask       = (1 << EShLangGeometry),
     EShLangFragmentMask       = (1 << EShLangFragment),
     EShLangComputeMask        = (1 << EShLangCompute),
-    EShLangRayGenNVMask       = (1 << EShLangRayGenNV),
-    EShLangIntersectNVMask    = (1 << EShLangIntersectNV),
-    EShLangAnyHitNVMask       = (1 << EShLangAnyHitNV),
-    EShLangClosestHitNVMask   = (1 << EShLangClosestHitNV),
-    EShLangMissNVMask         = (1 << EShLangMissNV),
-    EShLangCallableNVMask     = (1 << EShLangCallableNV),
-    EShLangTaskNVMask         = (1 << EShLangTaskNV),
-    EShLangMeshNVMask         = (1 << EShLangMeshNV),
+    EShLangRayGenMask         = (1 << EShLangRayGen),
+    EShLangRayGenNVMask       = EShLangRayGenMask,
+    EShLangIntersectMask      = (1 << EShLangIntersect),
+    EShLangIntersectNVMask    = EShLangIntersectMask,
+    EShLangAnyHitMask         = (1 << EShLangAnyHit),
+    EShLangAnyHitNVMask       = EShLangAnyHitMask,
+    EShLangClosestHitMask     = (1 << EShLangClosestHit),
+    EShLangClosestHitNVMask   = EShLangClosestHitMask,
+    EShLangMissMask           = (1 << EShLangMiss),
+    EShLangMissNVMask         = EShLangMissMask,
+    EShLangCallableMask       = (1 << EShLangCallable),
+    EShLangCallableNVMask     = EShLangCallableMask,
+    EShLangTaskMask           = (1 << EShLangTask),
+    EShLangTaskNVMask         = EShLangTaskMask,
+    EShLangMeshMask           = (1 << EShLangMesh),
+    EShLangMeshNVMask         = EShLangMeshMask,
+    LAST_ELEMENT_MARKER(EShLanguageMaskCount),
 } EShLanguageMask;
 
 namespace glslang {
@@ -127,25 +133,32 @@ class TType;
 typedef enum {
     EShSourceNone,
     EShSourceGlsl,               // GLSL, includes ESSL (OpenGL ES GLSL)
-    EShSourceHlsl,               // HLSL
+    EShSourceHlsl,               // HLSL (deprecated, see issue #4210)
+    LAST_ELEMENT_MARKER(EShSourceCount),
 } EShSource;                     // if EShLanguage were EShStage, this could be EShLanguage instead
 
 typedef enum {
     EShClientNone,               // use when there is no client, e.g. for validation
-    EShClientVulkan,
-    EShClientOpenGL,
+    EShClientVulkan,             // as GLSL dialect, specifies KHR_vulkan_glsl extension
+    EShClientOpenGL,             // as GLSL dialect, specifies ARB_gl_spirv extension
+    LAST_ELEMENT_MARKER(EShClientCount),
 } EShClient;
 
 typedef enum {
     EShTargetNone,
     EShTargetSpv,                 // SPIR-V (preferred spelling)
     EshTargetSpv = EShTargetSpv,  // legacy spelling
+    LAST_ELEMENT_MARKER(EShTargetCount),
 } EShTargetLanguage;
 
 typedef enum {
     EShTargetVulkan_1_0 = (1 << 22),                  // Vulkan 1.0
     EShTargetVulkan_1_1 = (1 << 22) | (1 << 12),      // Vulkan 1.1
+    EShTargetVulkan_1_2 = (1 << 22) | (2 << 12),      // Vulkan 1.2
+    EShTargetVulkan_1_3 = (1 << 22) | (3 << 12),      // Vulkan 1.3
+    EShTargetVulkan_1_4 = (1 << 22) | (4 << 12),      // Vulkan 1.4
     EShTargetOpenGL_450 = 450,                        // OpenGL
+    LAST_ELEMENT_MARKER(EShTargetClientVersionCount = 6),
 } EShTargetClientVersion;
 
 typedef EShTargetClientVersion EshTargetClientVersion;
@@ -157,13 +170,31 @@ typedef enum {
     EShTargetSpv_1_3 = (1 << 16) | (3 << 8),          // SPIR-V 1.3
     EShTargetSpv_1_4 = (1 << 16) | (4 << 8),          // SPIR-V 1.4
     EShTargetSpv_1_5 = (1 << 16) | (5 << 8),          // SPIR-V 1.5
+    EShTargetSpv_1_6 = (1 << 16) | (6 << 8),          // SPIR-V 1.6
+    LAST_ELEMENT_MARKER(EShTargetLanguageVersionCount = 7),
 } EShTargetLanguageVersion;
+
+//
+// Following are a series of helper enums for managing layouts and qualifiers,
+// used for TPublicType, TType, others.
+//
+
+enum TLayoutPacking {
+    ElpNone,
+    ElpShared, // default, but different than saying nothing
+    ElpStd140,
+    ElpStd430,
+    ElpPacked,
+    ElpScalar,
+    ElpCount // If expanding, see bitfield width below
+};
 
 struct TInputLanguage {
     EShSource languageFamily; // redundant information with other input, this one overrides when not EShSourceNone
     EShLanguage stage;        // redundant information with other input, this one overrides when not EShSourceNone
     EShClient dialect;
     int dialectVersion;       // version of client's language definition, not the client (when not EShClientNone)
+    bool vulkanRulesRelaxed;
 };
 
 struct TClient {
@@ -186,7 +217,7 @@ struct TEnvironment {
     TTarget target;           // what to generate
 };
 
-const char* StageName(EShLanguage);
+GLSLANG_EXPORT const char* StageName(EShLanguage);
 
 } // end namespace glslang
 
@@ -206,6 +237,7 @@ typedef enum {
     EShOptNone,
     EShOptSimple,       // Optimizations that can be done quickly
     EShOptFull,         // Optimizations that will take more time
+    LAST_ELEMENT_MARKER(EshOptLevelCount),
 } EShOptimizationLevel;
 
 //
@@ -214,41 +246,53 @@ typedef enum {
 typedef enum {
     EShTexSampTransKeep,   // keep textures and samplers as is (default)
     EShTexSampTransUpgradeTextureRemoveSampler,  // change texture w/o embeded sampler into sampled texture and throw away all samplers
+    LAST_ELEMENT_MARKER(EShTexSampTransCount),
 } EShTextureSamplerTransformMode;
 
 //
 // Message choices for what errors and warnings are given.
 //
-enum EShMessages {
-    EShMsgDefault          = 0,         // default is to give all required errors and extra warnings
-    EShMsgRelaxedErrors    = (1 << 0),  // be liberal in accepting input
-    EShMsgSuppressWarnings = (1 << 1),  // suppress all warnings, except those required by the specification
-    EShMsgAST              = (1 << 2),  // print the AST intermediate representation
-    EShMsgSpvRules         = (1 << 3),  // issue messages for SPIR-V generation
-    EShMsgVulkanRules      = (1 << 4),  // issue messages for Vulkan-requirements of GLSL for SPIR-V
-    EShMsgOnlyPreprocessor = (1 << 5),  // only print out errors produced by the preprocessor
-    EShMsgReadHlsl         = (1 << 6),  // use HLSL parsing rules and semantics
-    EShMsgCascadingErrors  = (1 << 7),  // get cascading errors; risks error-recovery issues, instead of an early exit
-    EShMsgKeepUncalled     = (1 << 8),  // for testing, don't eliminate uncalled functions
-    EShMsgHlslOffsets      = (1 << 9),  // allow block offsets to follow HLSL rules instead of GLSL rules
-    EShMsgDebugInfo        = (1 << 10), // save debug information
-    EShMsgHlslEnable16BitTypes  = (1 << 11), // enable use of 16-bit types in SPIR-V for HLSL
-    EShMsgHlslLegalization  = (1 << 12), // enable HLSL Legalization messages
-    EShMsgHlslDX9Compatible = (1 << 13), // enable HLSL DX9 compatible mode (right now only for samplers)
-    EShMsgBuiltinSymbolTable = (1 << 14), // print the builtin symbol table
+enum EShMessages : unsigned {
+    EShMsgDefault              = 0,         // default is to give all required errors and extra warnings
+    EShMsgRelaxedErrors        = (1 << 0),  // be liberal in accepting input
+    EShMsgSuppressWarnings     = (1 << 1),  // suppress all warnings, except those required by the specification
+    EShMsgAST                  = (1 << 2),  // print the AST intermediate representation
+    EShMsgSpvRules             = (1 << 3),  // issue messages for SPIR-V generation
+    EShMsgVulkanRules          = (1 << 4),  // issue messages for Vulkan-requirements of GLSL for SPIR-V
+    EShMsgOnlyPreprocessor     = (1 << 5),  // only print out errors produced by the preprocessor
+    EShMsgReadHlsl             = (1 << 6),  // use HLSL parsing rules and semantics (deprecated, see issue #4210)
+    EShMsgCascadingErrors      = (1 << 7),  // get cascading errors; risks error-recovery issues, instead of an early exit
+    EShMsgKeepUncalled         = (1 << 8),  // for testing, don't eliminate uncalled functions
+    EShMsgHlslOffsets          = (1 << 9),  // allow block offsets to follow HLSL rules instead of GLSL rules (deprecated, see issue #4210)
+    EShMsgDebugInfo            = (1 << 10), // save debug information
+    EShMsgHlslEnable16BitTypes = (1 << 11), // enable use of 16-bit types in SPIR-V for HLSL (deprecated, see issue #4210)
+    EShMsgHlslLegalization     = (1 << 12), // enable HLSL Legalization messages (deprecated, see issue #4210)
+    EShMsgHlslDX9Compatible    = (1 << 13), // enable HLSL DX9 compatible mode (for samplers and semantics) (deprecated, see issue #4210)
+    EShMsgBuiltinSymbolTable   = (1 << 14), // print the builtin symbol table
+    EShMsgEnhanced             = (1 << 15), // enhanced message readability
+    EShMsgAbsolutePath         = (1 << 16), // Output Absolute path for messages
+    EShMsgDisplayErrorColumn   = (1 << 17), // Display error message column aswell as line
+    EShMsgLinkTimeOptimization = (1 << 18), // perform cross-stage optimizations during linking
+    EShMsgValidateCrossStageIO = (1 << 19), // validate shader inputs have matching outputs in previous stage
+    EShMsgRelaxSetBindingLimits = (1 << 20), // relax layout(set/binding) limits
+    LAST_ELEMENT_MARKER(EShMsgCount),
 };
 
 //
 // Options for building reflection
 //
 typedef enum {
-    EShReflectionDefault           = 0,        // default is original behaviour before options were added
-    EShReflectionStrictArraySuffix = (1 << 0), // reflection will follow stricter rules for array-of-structs suffixes
-    EShReflectionBasicArraySuffix  = (1 << 1), // arrays of basic types will be appended with [0] as in GL reflection
-    EShReflectionIntermediateIO    = (1 << 2), // reflect inputs and outputs to program, even with no vertex shader
-    EShReflectionSeparateBuffers   = (1 << 3), // buffer variables and buffer blocks are reflected separately
-    EShReflectionAllBlockVariables = (1 << 4), // reflect all variables in blocks, even if they are inactive
-    EShReflectionUnwrapIOBlocks    = (1 << 5), // unwrap input/output blocks the same as with uniform blocks
+    EShReflectionDefault            = 0,        // default is original behaviour before options were added
+    EShReflectionStrictArraySuffix  = (1 << 0), // reflection will follow stricter rules for array-of-structs suffixes
+    EShReflectionBasicArraySuffix   = (1 << 1), // arrays of basic types will be appended with [0] as in GL reflection
+    EShReflectionIntermediateIO     = (1 << 2), // reflect inputs and outputs to program, even with no vertex shader
+    EShReflectionSeparateBuffers    = (1 << 3), // buffer variables and buffer blocks are reflected separately
+    EShReflectionAllBlockVariables  = (1 << 4), // reflect all variables in blocks, even if they are inactive
+    EShReflectionUnwrapIOBlocks     = (1 << 5), // unwrap input/output blocks the same as with uniform blocks
+    EShReflectionAllIOVariables     = (1 << 6), // reflect all input/output variables, even if they are inactive
+    EShReflectionSharedStd140SSBO   = (1 << 7), // Apply std140/shared rules for ubo to ssbo
+    EShReflectionSharedStd140UBO    = (1 << 8), // Apply std140/shared rules for ubo to ssbo
+    LAST_ELEMENT_MARKER(EShReflectionCount),
 } EShReflectionOptions;
 
 //
@@ -267,7 +311,7 @@ typedef struct {
 
 //
 // ShHandle held by but opaque to the driver.  It is allocated,
-// managed, and de-allocated by the compiler/linker. It's contents
+// managed, and de-allocated by the compiler/linker. Its contents
 // are defined by and used by the compiler and linker.  For example,
 // symbol table information and object code passed from the compiler
 // to the linker can be stored where ShHandle points.
@@ -280,10 +324,10 @@ typedef void* ShHandle;
 // Driver calls these to create and destroy compiler/linker
 // objects.
 //
-SH_IMPORT_EXPORT ShHandle ShConstructCompiler(const EShLanguage, int debugOptions);  // one per shader
-SH_IMPORT_EXPORT ShHandle ShConstructLinker(const EShExecutable, int debugOptions);  // one per shader pair
-SH_IMPORT_EXPORT ShHandle ShConstructUniformMap();                 // one per uniform namespace (currently entire program object)
-SH_IMPORT_EXPORT void ShDestruct(ShHandle);
+GLSLANG_EXPORT ShHandle ShConstructCompiler(const EShLanguage, int /*debugOptions unused*/); // one per shader
+GLSLANG_EXPORT ShHandle ShConstructLinker(const EShExecutable, int /*debugOptions unused*/); // one per shader pair
+GLSLANG_EXPORT ShHandle ShConstructUniformMap();                 // one per uniform namespace (currently entire program object)
+GLSLANG_EXPORT void ShDestruct(ShHandle);
 
 //
 // The return value of ShCompile is boolean, non-zero indicating
@@ -292,20 +336,16 @@ SH_IMPORT_EXPORT void ShDestruct(ShHandle);
 // The info-log should be written by ShCompile into
 // ShHandle, so it can answer future queries.
 //
-SH_IMPORT_EXPORT int ShCompile(
-    const ShHandle,
-    const char* const shaderStrings[],
-    const int numStrings,
-    const int* lengths,
-    const EShOptimizationLevel,
-    const TBuiltInResource *resources,
-    int debugOptions,
-    int defaultVersion = 110,            // use 100 for ES environment, overridden by #version in shader
-    bool forwardCompatible = false,      // give errors for use of deprecated features
-    EShMessages messages = EShMsgDefault // warnings and errors
-    );
+GLSLANG_EXPORT int ShCompile(const ShHandle, const char* const shaderStrings[], const int numStrings,
+                             const int* lengths, const EShOptimizationLevel, const TBuiltInResource* resources,
+                             int,                      // debugOptions unused
+                             int defaultVersion = 110, // use 100 for ES environment, overridden by #version in shader
+                             bool forwardCompatible = false,      // give errors for use of deprecated features
+                             EShMessages messages = EShMsgDefault, // warnings and errors
+                             const char* fileName = nullptr
+);
 
-SH_IMPORT_EXPORT int ShLinkExt(
+GLSLANG_EXPORT int ShLinkExt(
     const ShHandle,               // linker object
     const ShHandle h[],           // compiler objects to link together
     const int numHandles);
@@ -314,26 +354,26 @@ SH_IMPORT_EXPORT int ShLinkExt(
 // ShSetEncrpytionMethod is a place-holder for specifying
 // how source code is encrypted.
 //
-SH_IMPORT_EXPORT void ShSetEncryptionMethod(ShHandle);
+GLSLANG_EXPORT void ShSetEncryptionMethod(ShHandle);
 
 //
 // All the following return 0 if the information is not
 // available in the object passed down, or the object is bad.
 //
-SH_IMPORT_EXPORT const char* ShGetInfoLog(const ShHandle);
-SH_IMPORT_EXPORT const void* ShGetExecutable(const ShHandle);
-SH_IMPORT_EXPORT int ShSetVirtualAttributeBindings(const ShHandle, const ShBindingTable*);   // to detect user aliasing
-SH_IMPORT_EXPORT int ShSetFixedAttributeBindings(const ShHandle, const ShBindingTable*);     // to force any physical mappings
+GLSLANG_EXPORT const char* ShGetInfoLog(const ShHandle);
+GLSLANG_EXPORT const void* ShGetExecutable(const ShHandle);
+GLSLANG_EXPORT int ShSetVirtualAttributeBindings(const ShHandle, const ShBindingTable*);   // to detect user aliasing
+GLSLANG_EXPORT int ShSetFixedAttributeBindings(const ShHandle, const ShBindingTable*);     // to force any physical mappings
 //
 // Tell the linker to never assign a vertex attribute to this list of physical attributes
 //
-SH_IMPORT_EXPORT int ShExcludeAttributes(const ShHandle, int *attributes, int count);
+GLSLANG_EXPORT int ShExcludeAttributes(const ShHandle, int *attributes, int count);
 
 //
 // Returns the location ID of the named uniform.
 // Returns -1 if error.
 //
-SH_IMPORT_EXPORT int ShGetUniformLocation(const ShHandle uniformMap, const char* name);
+GLSLANG_EXPORT int ShGetUniformLocation(const ShHandle uniformMap, const char* name);
 
 #ifdef __cplusplus
     }  // end extern "C"
@@ -364,19 +404,28 @@ class TInfoSink;
 
 namespace glslang {
 
-const char* GetEsslVersionString();
-const char* GetGlslVersionString();
-int GetKhronosToolId();
+struct Version {
+    int major;
+    int minor;
+    int patch;
+    const char* flavor;
+};
+
+GLSLANG_EXPORT Version GetVersion();
+GLSLANG_EXPORT const char* GetEsslVersionString();
+GLSLANG_EXPORT const char* GetGlslVersionString();
+GLSLANG_EXPORT int GetKhronosToolId();
 
 class TIntermediate;
 class TProgram;
 class TPoolAllocator;
+class TIoMapResolver;
 
 // Call this exactly once per process before using anything else
-bool InitializeProcess();
+GLSLANG_EXPORT bool InitializeProcess();
 
 // Call once per process to tear down everything
-void FinalizeProcess();
+GLSLANG_EXPORT void FinalizeProcess();
 
 // Resource type for IO resolver
 enum TResourceType {
@@ -386,7 +435,19 @@ enum TResourceType {
     EResUbo,
     EResSsbo,
     EResUav,
+    EResCombinedSampler,
+    EResAs,
+    EResTensor,
     EResCount
+};
+
+enum TBlockStorageClass
+{
+    EbsUniform = 0,
+    EbsStorageBuffer,
+    EbsPushConstant,
+    EbsNone,    // not a uniform or buffer variable
+    EbsCount,
 };
 
 // Make one TShader per shader that you will link into a program. Then
@@ -394,6 +455,8 @@ enum TResourceType {
 //  - optionally call setEnv*(), see below for more detail
 //  - optionally use setPreamble() to set a special shader string that will be
 //    processed before all others but won't affect the validity of #version
+//  - optionally call addProcesses() for each setting/transform,
+//    see comment for class TProcesses
 //  - call parse(): source language and target environment must be selected
 //    either by correct setting of EShMessages sent to parse(), or by
 //    explicitly calling setEnv*()
@@ -404,18 +467,22 @@ enum TResourceType {
 //
 // N.B.: Destruct a linked program *before* destructing the shaders linked into it.
 //
-class TShader {
+class GLSLANG_EXPORT TShader {
 public:
     explicit TShader(EShLanguage);
     virtual ~TShader();
     void setStrings(const char* const* s, int n);
-    void setStringsWithLengths(const char* const* s, const int* l, int n);
+    void setStringsWithLengths(
+        const char* const* s, const int* l, int n);
     void setStringsWithLengthsAndNames(
         const char* const* s, const int* l, const char* const* names, int n);
     void setPreamble(const char* s) { preamble = s; }
     void setEntryPoint(const char* entryPoint);
     void setSourceEntryPoint(const char* sourceEntryPointName);
     void addProcesses(const std::vector<std::string>&);
+    void setUniqueId(unsigned long long id);
+    void setOverrideVersion(int version);
+    void setDebugInfo(bool debugInfo);
 
     // IO resolver binding data: see comments in ShaderLang.cpp
     void setShiftBinding(TResourceType res, unsigned int base);
@@ -430,16 +497,31 @@ public:
     void setResourceSetBinding(const std::vector<std::string>& base);
     void setAutoMapBindings(bool map);
     void setAutoMapLocations(bool map);
+    void setBindingsPerResourceType();
     void addUniformLocationOverride(const char* name, int loc);
     void setUniformLocationBase(int base);
     void setInvertY(bool invert);
+    void setDxPositionW(bool dxPosW);
+    void setEnhancedMsgs();
 #ifdef ENABLE_HLSL
-    void setHlslIoMapping(bool hlslIoMap);
-    void setFlattenUniformArrays(bool flatten);
+    void setHlslIoMapping(bool hlslIoMap);      // deprecated, see issue #4210
+    void setFlattenUniformArrays(bool flatten); // deprecated, see issue #4210
 #endif
     void setNoStorageFormat(bool useUnknownFormat);
     void setNanMinMaxClamp(bool nanMinMaxClamp);
+    void setDiscardIsTerminate(bool discardIsTerminate);
     void setTextureSamplerTransformMode(EShTextureSamplerTransformMode mode);
+    void addBlockStorageOverride(const char* nameStr, glslang::TBlockStorageClass backing);
+
+    void setGlobalUniformBlockName(const char* name);
+    void setAtomicCounterBlockName(const char* name);
+    void setGlobalUniformSet(unsigned int set);
+    void setGlobalUniformBinding(unsigned int binding);
+    void setAtomicCounterBlockSet(unsigned int set);
+    void setAtomicCounterBlockBinding(unsigned int binding);
+
+    void addSourceText(const char* text, size_t len);
+    void setSourceFile(const char* file);
 
     // For setting up the environment (cleared to nothingness in the constructor).
     // These must be called so that parsing is done for the right source language and
@@ -448,15 +530,18 @@ public:
     //
     // setEnvInput:    The input source language and stage. If generating code for a
     //                 specific client, the input client semantics to use and the
-    //                 version of the that client's input semantics to use, otherwise
+    //                 version of that client's input semantics to use, otherwise
     //                 use EShClientNone and version of 0, e.g. for validation mode.
     //                 Note 'version' does not describe the target environment,
     //                 just the version of the source dialect to compile under.
+    //                 For example, to choose the Vulkan dialect of GLSL defined by
+    //                 version 100 of the KHR_vulkan_glsl extension: lang = EShSourceGlsl,
+    //                 dialect = EShClientVulkan, and version = 100.
     //
     //                 See the definitions of TEnvironment, EShSource, EShLanguage,
     //                 and EShClient for choices and more detail.
     //
-    // setEnvClient:   The client that will be hosting the execution, and it's version.
+    // setEnvClient:   The client that will be hosting the execution, and its version.
     //                 Note 'version' is not the version of the languages involved, but
     //                 the version of the client environment.
     //                 Use EShClientNone and version of 0 if there is no client, e.g.
@@ -487,12 +572,20 @@ public:
         environment.target.version = version;
     }
 
+    void getStrings(const char* const* &s, int& n) { s = strings; n = numStrings; }
+
 #ifdef ENABLE_HLSL
-    void setEnvTargetHlslFunctionality1() { environment.target.hlslFunctionality1 = true; }
-    bool getEnvTargetHlslFunctionality1() const { return environment.target.hlslFunctionality1; }
+    void setEnvTargetHlslFunctionality1() { environment.target.hlslFunctionality1 = true; }  // deprecated, see issue #4210
+    bool getEnvTargetHlslFunctionality1() const { return environment.target.hlslFunctionality1; }  // deprecated, see issue #4210
 #else
     bool getEnvTargetHlslFunctionality1() const { return false; }
 #endif
+
+    void setEnvInputVulkanRulesRelaxed() { environment.input.vulkanRulesRelaxed = true; }
+    bool getEnvInputVulkanRulesRelaxed() const { return environment.input.vulkanRulesRelaxed; }
+
+    void setCompileOnly() { compileOnly = true; }
+    bool getCompileOnly() const { return compileOnly; }
 
     // Interface to #include handlers.
     //
@@ -577,8 +670,10 @@ public:
         virtual void releaseInclude(IncludeResult*) override { }
     };
 
-    bool parse(const TBuiltInResource*, int defaultVersion, EProfile defaultProfile, bool forceDefaultVersionAndProfile,
-               bool forwardCompatible, EShMessages, Includer&);
+    bool parse(
+        const TBuiltInResource*, int defaultVersion, EProfile defaultProfile,
+        bool forceDefaultVersionAndProfile, bool forwardCompatible,
+        EShMessages, Includer&);
 
     bool parse(const TBuiltInResource* res, int defaultVersion, EProfile defaultProfile, bool forceDefaultVersionAndProfile,
                bool forwardCompatible, EShMessages messages)
@@ -601,10 +696,11 @@ public:
 
     // NOTE: Doing just preprocessing to obtain a correct preprocessed shader string
     // is not an officially supported or fully working path.
-    bool preprocess(const TBuiltInResource* builtInResources,
-                    int defaultVersion, EProfile defaultProfile, bool forceDefaultVersionAndProfile,
-                    bool forwardCompatible, EShMessages message, std::string* outputString,
-                    Includer& includer);
+    bool preprocess(
+        const TBuiltInResource* builtInResources, int defaultVersion,
+        EProfile defaultProfile, bool forceDefaultVersionAndProfile,
+        bool forwardCompatible, EShMessages message, std::string* outputString,
+        Includer& includer);
 
     const char* getInfoLog();
     const char* getInfoDebugLog();
@@ -626,16 +722,22 @@ protected:
     // stringNames is the optional names for all the strings. If stringNames
     // is null, then none of the strings has name. If a certain element in
     // stringNames is null, then the corresponding string does not have name.
-    const char* const* strings;
+    const char* const* strings;      // explicit code to compile, see previous comment
     const int* lengths;
     const char* const* stringNames;
-    const char* preamble;
-    int numStrings;
+    int numStrings;                  // size of the above arrays
+    const char* preamble;            // string of implicit code to compile before the explicitly provided code
 
     // a function in the source string can be renamed FROM this TO the name given in setEntryPoint.
     std::string sourceEntryPointName;
 
+    // overrides #version in shader source or default version if #version isn't present
+    int overrideVersion;
+
     TEnvironment environment;
+
+    // Indicates this shader is meant to be used without linking
+    bool compileOnly = false;
 
     friend class TProgram;
 
@@ -643,14 +745,12 @@ private:
     TShader& operator=(TShader&);
 };
 
-#ifndef GLSLANG_WEB
-
 //
 // A reflection database and its interface, consistent with the OpenGL API reflection queries.
 //
 
 // Data needed for just a single object at the granularity exchanged by the reflection API
-class TObjectReflection {
+class GLSLANG_EXPORT TObjectReflection {
 public:
     TObjectReflection(const std::string& pName, const TType& pType, int pOffset, int pGLDefineType, int pSize, int pIndex);
 
@@ -658,6 +758,8 @@ public:
     int getBinding() const;
     void dump() const;
     static TObjectReflection badReflection() { return TObjectReflection(); }
+
+    unsigned int layoutLocation() const;
 
     std::string name;
     int offset;
@@ -667,6 +769,7 @@ public:
     int counterIndex;
     int numMembers;
     int arrayStride;            // stride of an array variable
+    int topLevelArraySize;      // size of the top-level variable in a storage buffer member
     int topLevelArrayStride;    // stride of the top-level variable in a storage buffer member
     EShLanguageMask stages;
 
@@ -680,9 +783,55 @@ protected:
     const TType* type;
 };
 
-class  TReflection;
-class  TIoMapper;
-struct TVarEntryInfo;
+class TReflection;
+class TIoMapper;
+class TIntermSymbol;
+
+struct GLSLANG_EXPORT TVarEntryInfo {
+    long long id;
+    TIntermSymbol* symbol;
+    bool live;
+    TLayoutPacking upgradedToPushConstantPacking; // ElpNone means it hasn't been upgraded
+    int newBinding;
+    int newSet;
+    int newLocation;
+    int newComponent;
+    int newIndex;
+    EShLanguage stage;
+
+    void clearNewAssignments() {
+        upgradedToPushConstantPacking = ElpNone;
+        newBinding = -1;
+        newSet = -1;
+        newLocation = -1;
+        newComponent = -1;
+        newIndex = -1;
+    }
+
+    struct TOrderById {
+        inline bool operator()(const TVarEntryInfo& l, const TVarEntryInfo& r) { return l.id < r.id; }
+    };
+
+    struct TOrderByPriority {
+        // ordering:
+        // 1) has both binding and set
+        // 2) has binding but no set
+        // 3) has no binding but set
+        // 4) has no binding and no set
+        bool operator()(const TVarEntryInfo& l, const TVarEntryInfo& r);
+   };
+
+    struct TOrderByPriorityAndLive {
+        // ordering:
+        // 1) do live variables first
+        // 2) has both binding and set
+        // 3) has binding but no set
+        // 4) has no binding but set
+        // 5) has no binding and no set
+        bool operator()(const TVarEntryInfo& l, const TVarEntryInfo& r);
+   };
+};
+
 
 // Allows to customize the binding layout after linking.
 // All used uniform variables will invoke at least validateBinding.
@@ -707,8 +856,7 @@ struct TVarEntryInfo;
 //
 // NOTE: that still limit checks are applied to bindings and sets
 // and may result in an error.
-class TIoMapResolver
-{
+class GLSLANG_EXPORT TIoMapResolver {
 public:
     virtual ~TIoMapResolver() {}
 
@@ -757,10 +905,22 @@ public:
     // Called by TSlotCollector to resolve resource locations or bindings
     virtual void reserverResourceSlot(TVarEntryInfo& ent, TInfoSink& infoSink) = 0;
     // Called by mapIO.addStage to set shader stage mask to mark a stage be added to this pipeline
-    virtual void addStage(EShLanguage stage) = 0;
+    virtual void addStage(EShLanguage stage, TIntermediate& stageIntermediate) = 0;
 };
 
-#endif // GLSLANG_WEB
+// I/O mapper
+class TIoMapper {
+public:
+    TIoMapper() {}
+    virtual ~TIoMapper() {}
+    // grow the reflection stage by stage
+    bool virtual addStage(EShLanguage, TIntermediate&, TInfoSink&, TIoMapResolver*);
+    bool virtual doMap(TIoMapResolver*, TInfoSink&) { return true; }
+    bool virtual setAutoPushConstantBlock(const char*, unsigned int, TLayoutPacking) { return false; }
+};
+
+// Get the default GLSL IO mapper
+GLSLANG_EXPORT TIoMapper* GetGlslIoMapper();
 
 // Make one TProgram per set of shaders that will get linked together.  Add all
 // the shaders that are to be linked together.  After calling shader.parse()
@@ -768,12 +928,12 @@ public:
 //
 // N.B.: Destruct a linked program *before* destructing the shaders linked into it.
 //
-class TProgram {
+class GLSLANG_EXPORT TProgram {
 public:
     TProgram();
     virtual ~TProgram();
     void addShader(TShader* shader) { stages[shader->stage].push_back(shader); }
-
+    std::list<TShader*>& getShaders(EShLanguage stage) { return stages[stage]; }
     // Link Validation interface
     bool link(EShMessages);
     const char* getInfoLog();
@@ -781,14 +941,14 @@ public:
 
     TIntermediate* getIntermediate(EShLanguage stage) const { return intermediate[stage]; }
 
-#ifndef GLSLANG_WEB
-
     // Reflection Interface
 
     // call first, to do liveness analysis, index mapping, etc.; returns false on failure
     bool buildReflection(int opts = EShReflectionDefault);
     unsigned getLocalSize(int dim) const;                  // return dim'th local size
+    unsigned getTileShadingRateQCOM(int dim) const;        // return dim'th tile shading rate QCOM
     int getReflectionIndex(const char *name) const;
+    int getReflectionPipeIOIndex(const char* name, const bool inOrOut) const;
     int getNumUniformVariables() const;
     const TObjectReflection& getUniform(int index) const;
     int getNumUniformBlocks() const;
@@ -817,6 +977,9 @@ public:
 
     // can be used for glGetUniformIndices()
     int getUniformIndex(const char *name) const        { return getReflectionIndex(name); }
+
+    int getPipeIOIndex(const char *name, const bool inOrOut) const
+                                                       { return getReflectionPipeIOIndex(name, inOrOut); }
 
     // can be used for "name" part of glGetActiveUniform()
     const char *getUniformName(int index) const        { return getUniform(index).name.c_str(); }
@@ -867,23 +1030,25 @@ public:
     const TType *getAttributeTType(int index) const    { return getPipeInput(index).getType(); }
 
     void dumpReflection();
+
+    // Get the IO resolver to use for mapIO
+    TIoMapResolver* getGlslIoResolver(EShLanguage stage);
+
     // I/O mapping: apply base offsets and map live unbound variables
     // If resolver is not provided it uses the previous approach
     // and respects auto assignment and offsets.
     bool mapIO(TIoMapResolver* pResolver = nullptr, TIoMapper* pIoMapper = nullptr);
-#endif
 
 protected:
     bool linkStage(EShLanguage, EShMessages);
+    bool crossStageCheck(EShMessages);
 
     TPoolAllocator* pool;
     std::list<TShader*> stages[EShLangCount];
     TIntermediate* intermediate[EShLangCount];
     bool newedIntermediate[EShLangCount];      // track which intermediate were "new" versus reusing a singleton unit in a stage
     TInfoSink* infoSink;
-#ifndef GLSLANG_WEB
     TReflection* reflection;
-#endif
     bool linked;
 
 private:

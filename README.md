@@ -4,6 +4,13 @@
 **glslcc** is a command line tool that converts GLSL code to HLSL, GLES (version 2.0 and 3.0), Metal (MSL) and also other GLSL versions (GLSL 330, GLSL 400, etc..).  
 It uses [glslang](https://github.com/KhronosGroup/glslang) for parsing GLSL and compiling SPIR-V. And [SPIRV-cross](https://github.com/KhronosGroup/SPIRV-Cross) for converting the code from SPIR-V to the target language.  
 
+### Compatibility
+
+- Updated the bundled glslang integration for glslang 16.4, including the current `ShaderLang.h` API and `TBuiltInResource` layout.
+- CMake links legacy glslang targets only when they exist, supporting versions without the `OGLCompiler` and `SPVRemapper` targets.
+- Avoids mixing glslang and SPIRV-Cross SPIR-V enum headers in the same translation unit.
+- Preserves the default MSVC Release C++ runtime, optimization, and `NDEBUG` flags.
+
 ### Features
 
 - Currently, vertex, fragment and compute shaders are supported
