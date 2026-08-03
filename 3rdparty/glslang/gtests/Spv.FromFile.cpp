@@ -88,6 +88,7 @@ using CompileUpgradeTextureToSampledTextureAndDropSamplersTest = GlslangTest<::t
 using GlslSpirvDebugInfoTest = GlslangTest<::testing::TestWithParam<std::string>>;
 using GlslNonSemanticShaderDebugInfoTest = GlslangTest<::testing::TestWithParam<std::string>>;
 using GlslNonSemanticShaderDebugInfoVulkanLatestTest = GlslangTest<::testing::TestWithParam<std::string>>;
+using GlslSplitBarrierEXTTest = GlslangTest<::testing::TestWithParam<std::string>>;
 
 // Compiling GLSL to SPIR-V under Vulkan semantics. Expected to successfully
 // generate SPIR-V.
@@ -292,6 +293,13 @@ TEST_P(GlslNonSemanticShaderDebugInfoTest, FromFile)
 }
 
 TEST_P(GlslNonSemanticShaderDebugInfoVulkanLatestTest, FromFile)
+{
+    loadFileCompileAndCheck(GlobalTestSettings.testRoot, GetParam(), Source::GLSL, Semantics::Vulkan,
+                            glslang::EShTargetVulkan_1_4, glslang::EShTargetSpv_1_6, Target::Spv, true, "",
+                            "/baseResults/", false, true, true);
+}
+
+TEST_P(GlslSplitBarrierEXTTest, FromFile)
 {
     loadFileCompileAndCheck(GlobalTestSettings.testRoot, GetParam(), Source::GLSL, Semantics::Vulkan,
                             glslang::EShTargetVulkan_1_4, glslang::EShTargetSpv_1_6, Target::Spv, true, "",
@@ -678,6 +686,13 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.float64.frag",
         "spv.memoryScopeSemantics.comp",
         "spv.memoryScopeSemantics_Error.comp",
+        "spv.splitBarrierMemoryScopeSemantics.comp",
+        "spv.splitBarrierArriveMemoryScopeSemantics_Error1.comp",
+        "spv.splitBarrierArriveMemoryScopeSemantics_Error2.comp",
+        "spv.splitBarrierArriveMemoryScopeSemantics_Error3.comp",
+        "spv.splitBarrierWaitMemoryScopeSemantics_Error1.comp",
+        "spv.splitBarrierWaitMemoryScopeSemantics_Error2.comp",
+        "spv.splitBarrierWaitMemoryScopeSemantics_Error3.comp",
         "spv.multiView.frag",
         "spv.queueFamilyScope.comp",
         "spv.RayGenShader11.rgen",
@@ -758,6 +773,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.longVectorBadParams.decls.comp",
         "spv.longVectorBadParams.constructors.comp",
         "spv.longVectorBadParams.constructors.as.type.comp",
+        "spv.longVectorBadParams.index.comp",
         "spv.longVectorBuiltins.comp",
         "spv.longVectorBuiltinsfp16.comp",
         "spv.longVectorBuiltinsfp64.comp",
@@ -1253,6 +1269,15 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.debuginfo.rt_types.glsl.rgen",
         "spv.debuginfo.rt_nv_builtins.glsl.rahit",
         "spv.debuginfo.rt_ext_builtins.glsl.rahit",
+    })),
+    FileNameAsCustomTestSuffix
+);
+
+INSTANTIATE_TEST_SUITE_P(
+    Glsl, GlslSplitBarrierEXTTest,
+    ::testing::ValuesIn(std::vector<std::string>({
+        "spv.split.barrier.vert",
+        "spv.split.barrier.comp"
     })),
     FileNameAsCustomTestSuffix
 );

@@ -47,6 +47,7 @@
 
 #include <string>
 
+#include "glslang/Public/ShaderLang.h"
 #include "SPIRV/GlslangToSpv.h"
 #include "SPIRV/SpvTools.h"
 #include "SPIRV/disassemble.h"

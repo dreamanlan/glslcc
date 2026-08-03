@@ -8,16 +8,17 @@ set(SOURCE_FILES "glslcc.cpp"
 				 
 add_executable(glslcc ${SOURCE_FILES})
 
-target_link_directories(glslcc PRIVATE
-    "${CMAKE_SOURCE_DIR}/3rdparty/spirv-cross/external/glslang-build/output/lib"
-)
+set(GLSLCC_GLSLANG_LEGACY_TARGETS)
+foreach(GLSLANG_LEGACY_TARGET OGLCompiler OSDependent SPIRV SPVRemapper)
+    if(TARGET ${GLSLANG_LEGACY_TARGET})
+        list(APPEND GLSLCC_GLSLANG_LEGACY_TARGETS ${GLSLANG_LEGACY_TARGET})
+    endif()
+endforeach()
 
 target_link_libraries(glslcc PRIVATE 
         sx
         glslang 
-        OSDependent 
-        SPIRV 
-        SPVRemapper 
+        ${GLSLCC_GLSLANG_LEGACY_TARGETS}
         spirv-cross-core 
         spirv-cross-cpp 
         spirv-cross-glsl 

@@ -3877,6 +3877,8 @@ bool TGlslangToSpvTraverser::visitAggregate(glslang::TVisit visit, glslang::TInt
     case glslang::EOpEmitVertex:
     case glslang::EOpEndPrimitive:
     case glslang::EOpBarrier:
+    case glslang::EOpControlBarrierArriveEXT:
+    case glslang::EOpControlBarrierWaitEXT:
     case glslang::EOpMemoryBarrier:
     case glslang::EOpMemoryBarrierAtomicCounter:
     case glslang::EOpMemoryBarrierBuffer:
@@ -6153,7 +6155,7 @@ spv::Id TGlslangToSpvTraverser::convertGlslangToSpvType(const glslang::TType& ty
     }
 
     if (type.isLongVector()) {
-        // SPIR-V LongVectorEXT not needed when component count is literal 2–4.
+        // SPIR-V LongVectorEXT not needed when component count is literal 2-4.
         const bool needLongVectorCap = type.hasSpecConstantVectorComponents() ||
             (type.getTypeParameters()->arraySizes->getDimSize(0) < 2 ||
              type.getTypeParameters()->arraySizes->getDimSize(0) > 4);
@@ -10892,6 +10894,26 @@ spv::Id TGlslangToSpvTraverser::createMiscOperation(glslang::TOperator op, spv::
             return 0;
         }
         break;
+    case glslang::EOpControlBarrierArriveEXT:
+    case glslang::EOpControlBarrierWaitEXT:
+        {
+            builder.addExtension(spv::E_SPV_EXT_split_barrier);
+            builder.addCapability(spv::Capability::SplitBarrierEXT);
+            // This is for the extended controlBarrierArrive/Wait functions, with four operands.
+            // The unextended controlBarrierArrive/controlBarrierWait() go through createNoArgOperation.
+            assert(operands.size() == 4);
+            auto const executionScope = (spv::Scope)builder.getConstantScalar(operands[0]);
+            auto const memoryScope = (spv::Scope)builder.getConstantScalar(operands[1]);
+            auto const semantics = (spv::MemorySemanticsMask)(builder.getConstantScalar(operands[2]) | builder.getConstantScalar(operands[3]));
+            builder.createSplitControlBarrier((op == glslang::EOpControlBarrierArriveEXT ? spv::Op::OpControlBarrierArriveEXT
+                                               : spv::Op::OpControlBarrierWaitEXT),
+                                              executionScope, memoryScope, semantics);
+            if (anySet(semantics, spv::MemorySemanticsMask::OutputMemoryKHR)) {
+                builder.addCapability(spv::Capability::VulkanMemoryModelKHR);
+            }
+            return 0;
+        }
+        break;
     case glslang::EOpMemoryBarrier:
         {
             // This is for the extended memoryBarrier function, with three operands.
@@ -11709,6 +11731,26 @@ spv::Id TGlslangToSpvTraverser::createNoArgOperation(glslang::TOperator op, spv:
                                             spv::MemorySemanticsMask::WorkgroupMemory |
                                             spv::MemorySemanticsMask::AcquireRelease);
         }
+        return 0;
+    case glslang::EOpControlBarrierArriveEXT:
+        builder.addExtension(spv::E_SPV_EXT_split_barrier);
+        builder.addCapability(spv::Capability::SplitBarrierEXT);
+        if (glslangIntermediate->usingVulkanMemoryModel()) {
+            builder.addCapability(spv::Capability::VulkanMemoryModelKHR);
+        }
+        builder.createSplitControlBarrier(spv::Op::OpControlBarrierArriveEXT, spv::Scope::Workgroup, spv::Scope::Workgroup,
+                                          spv::MemorySemanticsMask::WorkgroupMemory |
+                                          spv::MemorySemanticsMask::Release);
+        return 0;
+    case glslang::EOpControlBarrierWaitEXT:
+        builder.addExtension(spv::E_SPV_EXT_split_barrier);
+        builder.addCapability(spv::Capability::SplitBarrierEXT);
+        if (glslangIntermediate->usingVulkanMemoryModel()) {
+            builder.addCapability(spv::Capability::VulkanMemoryModelKHR);
+        }
+        builder.createSplitControlBarrier(spv::Op::OpControlBarrierWaitEXT, spv::Scope::Workgroup, spv::Scope::Workgroup,
+                                          spv::MemorySemanticsMask::WorkgroupMemory |
+                                          spv::MemorySemanticsMask::Acquire);
         return 0;
     case glslang::EOpMemoryBarrier:
         builder.createMemoryBarrier(memoryBarrierScope, spv::MemorySemanticsAllMemory |
@@ -12744,8 +12786,8 @@ void GlslangToSpv(const TIntermediate& intermediate, std::vector<unsigned int>& 
     // If from HLSL, run spirv-opt to "legalize" the SPIR-V for Vulkan
     // eg. forward and remove memory writes of opaque types.
     bool prelegalization = intermediate.getSource() == EShSourceHlsl;
-    if ((prelegalization || options->optimizeSize) && !options->disableOptimizer) {
-        SpirvToolsTransform(intermediate, spirv, logger, options);
+    if ((prelegalization || options->optimizeSize || options->optimizePerformance) && !options->disableOptimizer) {
+        SpirvToolsTransform(intermediate, spirv, logger, options, prelegalization);
         prelegalization = false;
     }
     else if (options->stripDebugInfo) {

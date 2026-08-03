@@ -719,6 +719,15 @@ void CompilerGLSL::find_static_extensions()
 		require_extension_internal("GL_EXT_shader_quad_control");
 	}
 
+	if (execution.flags.get(ExecutionModeDepthGreater) ||
+		execution.flags.get(ExecutionModeDepthLess))
+	{
+		if (!options.es)
+			require_extension_internal("GL_ARB_conservative_depth");
+		else if (options.version >= 300)
+			require_extension_internal("GL_EXT_conservative_depth");
+	}
+
 	// KHR one is likely to get promoted at some point, so if we don't see an explicit SPIR-V extension, assume KHR.
 	for (auto &ext : ir.declared_extensions)
 		if (ext == "SPV_NV_fragment_shader_barycentric")
@@ -1359,10 +1368,14 @@ void CompilerGLSL::emit_header()
 			statement("#endif");
 		}
 
-		if (!options.es && execution.flags.get(ExecutionModeDepthGreater))
-			statement("layout(depth_greater) out float gl_FragDepth;");
-		else if (!options.es && execution.flags.get(ExecutionModeDepthLess))
-			statement("layout(depth_less) out float gl_FragDepth;");
+		if (!options.es || options.version >= 300)
+		{
+			const char *prec = options.es ? "highp " : "";
+			if (execution.flags.get(ExecutionModeDepthGreater))
+				statement("layout(depth_greater) out ", prec, "float gl_FragDepth;");
+			else if (execution.flags.get(ExecutionModeDepthLess))
+				statement("layout(depth_less) out ", prec, "float gl_FragDepth;");
+		}
 
 		if (execution.flags.get(ExecutionModeRequireFullQuadsKHR))
 			statement("layout(full_quads) in;");
@@ -13001,6 +13014,18 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		// the block itself must be marked volatile, or VulkanMM is used to do an explicit volatile load.
 		if (forward && length >= 4 && (ops[3] & MemoryAccessVolatileMask) != 0)
 			forward = false;
+
+		// If trying to load raw BDA pointers, we may not be able to rely on aliasing rules, especially
+		// if that pointer came from bitcasts or similar.
+		// We won't be able to tie the loaded expression to a flushable memory declaration,
+		// so have to block forwarding early.
+		// If the BDA expression is loaded from a memory declaration, the memory declaration decides.
+		if (forward && expression_type(ptr).storage == StorageClassPhysicalStorageBuffer &&
+			!maybe_get_backing_variable(ptr) &&
+			!maybe_get_backing_buffer_pointer(ptr))
+		{
+			forward = false;
+		}
 
 		// If loading a non-native row-major matrix, mark the expression as need_transpose.
 		bool need_transpose = false;
