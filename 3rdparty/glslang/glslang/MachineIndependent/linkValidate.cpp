@@ -2754,6 +2754,8 @@ int TIntermediate::getBlockSize(const TType& blockType)
 {
     const TTypeList& memberList = *blockType.getStruct();
     int lastIndex = (int)memberList.size() - 1;
+    if (lastIndex < 0)
+        return 0;
     int lastOffset = getOffset(blockType, lastIndex);
 
     int lastMemberSize;
