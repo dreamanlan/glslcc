@@ -1355,6 +1355,7 @@ TIntermTyped* TIntermediate::foldDereference(TIntermTyped* node, int index, cons
             start += (*node->getType().getStruct())[i].type->computeNumComponents();
     }
 
+    size = std::min(size, node->getAsConstantUnion()->getConstArray().size());
     result = addConstantUnion(TConstUnionArray(node->getAsConstantUnion()->getConstArray(), start, size), node->getType(), loc);
 
     if (result == nullptr)
