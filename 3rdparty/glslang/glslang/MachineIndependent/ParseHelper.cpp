@@ -1663,6 +1663,20 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
 
 void TParseContext::handleCoopMat2FunctionCall(const TSourceLoc& loc, const TFunction* fnCandidate, TIntermTyped* result, TIntermNode* arguments)
 {
+    // coopMatPerElementNV/EXT are declared with an empty prototype, so overload
+    // resolution accepts any argument list. Fewer than the required (result matrix,
+    // input matrix, per-element function) arguments is not passed as an aggregate,
+    // skips the validation below, and reaches SPIR-V generation, which dereferences
+    // operands[0] as the result matrix.
+    if (fnCandidate->getBuiltInOp() == EOpCooperativeMatrixPerElementOpNV) {
+        const TIntermAggregate* aggregate = arguments ? arguments->getAsAggregate() : nullptr;
+        if (aggregate == nullptr || aggregate->getSequence().size() < 3) {
+            error(loc, "expected a result matrix, an input matrix, and a per-element function",
+                  fnCandidate->getName().c_str(), "");
+            return;
+        }
+    }
+
     if (arguments && arguments->getAsAggregate()) {
         auto &sequence = arguments->getAsAggregate()->getSequence();
 
@@ -7948,21 +7962,17 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
                 return;
             }
             if (spvVersion.spv != 0) {
-                static const char * const specIds[] = {
-                    "local_size_x_id",
-                    "local_size_y_id",
-                    "local_size_z_id",
-                };
-
-                for (std::size_t i = 0; i < std::size(specIds); i++) {
-                    if (id == specIds[i]) {
-                        if (spvVersion.spv >= glslang::EShTargetSpv_1_2)
-                            publicType.shaderQualifiers.localSizeSpecId[i] = value;
-                        else
-                            error(loc, "requires SPIR-V 1.2", id.c_str(), "");
-
-                        return;
-                    }
+                if (id == "local_size_x_id") {
+                    publicType.shaderQualifiers.localSizeSpecId[0] = value;
+                    return;
+                }
+                if (id == "local_size_y_id") {
+                    publicType.shaderQualifiers.localSizeSpecId[1] = value;
+                    return;
+                }
+                if (id == "local_size_z_id") {
+                    publicType.shaderQualifiers.localSizeSpecId[2] = value;
+                    return;
                 }
             }
         }

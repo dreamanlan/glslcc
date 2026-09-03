@@ -6391,7 +6391,13 @@ string CompilerGLSL::constant_expression(const SPIRConstant &c,
 		}
 		else
 		{
-			return join(type_to_glsl(type), "(", to_expression(c.subconstants[0]), ")");
+			// HLSL needs to emit scalar-to-vector constructors as C-style type casts, e.g. `(float4)1.0` vs. `vec4(1.0)`.
+			std::string subconst_expr = to_expression(c.subconstants[0]);
+			if (!backend.use_constructor_splatting &&
+				type.vecsize > 1 && type.columns == 1 && is_scalar(get<SPIRType>(expression_type_id(c.subconstants[0]))))
+				return join("(", type_to_glsl(type), ")", subconst_expr);
+			else
+				return join(type_to_glsl(type), "(", subconst_expr, ")");
 		}
 	}
 	else if (!c.subconstants.empty())
@@ -11307,7 +11313,13 @@ string CompilerGLSL::access_chain_internal(uint32_t base, const uint32_t *indice
 			else
 				physical_type = 0;
 
-			row_major_matrix_needs_conversion = member_is_non_native_row_major_matrix(*type, index);
+			// GLSL does not allow `layout(row_major)` qualifier inside bare struct declarations.
+			// Structs used as members of UBO/SSBO blocks can have layout qualifiers applied at the block level.
+			// Push constant blocks in OpenGL are also emitted as bare structs (without Block decoration in output).
+			auto *var = maybe_get_backing_variable(base);
+			const bool is_push_constant_emulated = !options.vulkan_semantics && var != nullptr && var->storage == StorageClassPushConstant;
+
+			row_major_matrix_needs_conversion = member_is_non_native_row_major_matrix(*type, index, is_push_constant_emulated);
 			type_id = type->member_types[index];
 			type = &get<SPIRType>(type->member_types[index]);
 		}
@@ -16629,7 +16641,12 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		}
 		else
 		{
-			rhs = join(type_to_glsl(type), "(", to_expression(ops[2]), ")");
+			// HLSL needs to emit scalar-to-vector constructors as C-style type casts, e.g. `(float4)1.0` vs. `vec4(1.0)`.
+			if (!backend.use_constructor_splatting &&
+				type.vecsize > 1 && type.columns == 1 && is_scalar(get<SPIRType>(expression_type_id(ops[2]))))
+				rhs = join("(", type_to_glsl(type), ")", to_enclosed_expression(ops[2]));
+			else
+				rhs = join(type_to_glsl(type), "(", to_expression(ops[2]), ")");
 		}
 		emit_op(result_type, id, rhs, true);
 		break;
@@ -16783,10 +16800,11 @@ bool CompilerGLSL::is_non_native_row_major_matrix(uint32_t id)
 }
 
 // Checks whether the member is a row_major matrix that requires conversion before use
-bool CompilerGLSL::member_is_non_native_row_major_matrix(const SPIRType &type, uint32_t index)
+bool CompilerGLSL::member_is_non_native_row_major_matrix(const SPIRType &type, uint32_t index, bool is_layout_disabled)
 {
-	// Natively supported row-major matrices do not need to be converted.
-	if (backend.native_row_major_matrix && !is_legacy())
+	// Natively supported row-major matrices do not need to be converted,
+	// unless layout qualifiers are disabled, which is the case for Vulkan push_constant to OpenGL struct translation.
+	if (backend.native_row_major_matrix && !is_legacy() && !is_layout_disabled)
 		return false;
 
 	// Non-matrix or column-major matrix types do not need to be converted.

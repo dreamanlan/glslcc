@@ -10070,7 +10070,7 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
 		case Dim1D:
 			if (!msl_options.texture_1D_as_2D)
 				SPIRV_CROSS_THROW("ImageQueryLod is not supported on 1D textures.");
-			[[fallthrough]];
+			/* fallthrough */
 		case Dim2D:
 			if (coord_type.vecsize > 2)
 				coord_expr = enclose_expression(coord_expr) + ".xy";
@@ -13573,7 +13573,7 @@ bool CompilerMSL::is_non_native_row_major_matrix(uint32_t id)
 }
 
 // Checks whether the member is a row_major matrix that requires conversion before use
-bool CompilerMSL::member_is_non_native_row_major_matrix(const SPIRType &type, uint32_t index)
+bool CompilerMSL::member_is_non_native_row_major_matrix(const SPIRType &type, uint32_t index, bool /*is_layout_disabled*/)
 {
 	return has_member_decoration(type.self, index, DecorationRowMajor);
 }
