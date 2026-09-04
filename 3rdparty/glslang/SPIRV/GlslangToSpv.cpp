@@ -3382,21 +3382,10 @@ void TGlslangToSpvTraverser::createAbortEXT(const glslang::TIntermSequence &glsl
     builder.addExtension(spv::E_SPV_KHR_constant_data);
     builder.addExtension(spv::E_SPV_KHR_abort);
 
-    const uint32_t formatSpecifiersSize = 4;
-    const char* formatSpecifiers[formatSpecifiersSize] = {"%d", "%i", "%f", "%u"};
-    // 1. Check whether message is empty or has format specifiers.
+    // 1. Get the message string.
     const auto emptyMsg = glslang::TString("\0");
-    bool hasSpecifier = false;
     const glslang::TString* msg =
         isEmptyMsg ? &emptyMsg : glslangOperands[0]->getAsConstantUnion()->getConstArray()[0].getSConst();
-    if (!isEmptyMsg) {
-        for (uint32_t i = 0; i < formatSpecifiersSize; i++) {
-            if (!msg->empty() && msg->find(formatSpecifiers[i]) != std::string::npos) {
-                hasSpecifier = true;
-                break;
-            }
-        }
-    }
     // 2. Prepare to construct message struct variable, record members' types, data and offsets.
     std::vector<int> structMemberOffsets;
     std::vector<spv::Id> structMemberType;
@@ -3404,51 +3393,84 @@ void TGlslangToSpvTraverser::createAbortEXT(const glslang::TIntermSequence &glsl
     std::vector<spv::Id> structMemberData;
     structMemberOffsets.push_back(0);
     auto charType = builder.makeIntType(8);
-    // 2.1 Get string's length (if has specifier, be spec const).
+    // 2.1 Get string's length.
     //     If not an empty string, \0 is the final character used for padding.
     unsigned int msgLen = isEmptyMsg ? 1 : msg->size() + 1;
     unsigned int paddingSize = (4 - msgLen % 4) % 4;
     msgLen = msgLen + paddingSize;
     spv::Id constLen = builder.makeUintConstant(msgLen);
-    spv::Op constDataOp = spv::Op::OpConstantDataKHR;
-    if (hasSpecifier) {
-        constLen = builder.makeUintConstant(msgLen, true);
-        constDataOp = spv::Op::OpSpecConstantDataKHR;
-    }
-    // 2.2 Get string's array type (if specifier, be spec const).
+    // 2.2 Get string's array type.
     auto msgArrType = builder.makeArrayType(charType, constLen, 1);
-    auto msgLoadArrType = builder.makeArrayType(charType, constLen, 1);
-    // 2.3 Add string constant data
-    auto msgConstData = builder.createConstData(constDataOp, msgArrType, {msg->c_str()});
+    // 2.3 Add string constant data.
+    //     SPV_KHR_abort does not mandate a form for the message; it is emitted as plain
+    //     constant data. Its example uses a specialization constant so that an application
+    //     can swap a format modifier at specialization time, but that needs a SpecId the
+    //     shader author controls, so it is not something to apply automatically here.
+    auto msgConstData = builder.createConstData(spv::Op::OpConstantDataKHR, msgArrType, {msg->c_str()});
     // 2.4 Add decoration for this string.
     builder.addDecoration(msgArrType, spv::Decoration::UTFEncodedKHR);
-    builder.addDecoration(msgLoadArrType, spv::Decoration::UTFEncodedKHR);
+    // Array stride for char is 1 byte per element for explicit layout
+    builder.addDecoration(msgArrType, spv::Decoration::ArrayStride, 1);
     // 2.5 Collect data and type for construct an internal message structure member.
     structMemberType.push_back(msgArrType);
-    structLoadMemberType.push_back(msgLoadArrType);
+    structLoadMemberType.push_back(msgArrType);
     structMemberOffsets.push_back(msgLen);
     structMemberData.push_back(msgConstData);
     // 3. Add extra following arguments/variables' types in member structure.
+    //    Matrix members need their stride recorded so they can be explicitly laid out below;
+    //    0 means the member is not a matrix.
+    std::vector<int> structMemberMatrixStrides;
+    structMemberMatrixStrides.push_back(0);
+    // The message is always packed with scalar rules, so that a given argument list produces
+    // one layout regardless of how the rest of the shader is laid out. A consumer parsing the
+    // message then only ever has to know the one set of rules.
     for (unsigned int i = 1; i < glslangOperands.size(); i++) {
         spv::Builder::AccessChain save = builder.getAccessChain();
         builder.clearAccessChain();
-        auto width = GetNumBits(glslangOperands[i]->getAsTyped()->getBasicType());
-        structMemberOffsets.push_back(structMemberOffsets.back() + width / 8);
+        // Align this member's offset, then advance past it to get the (not yet aligned)
+        // offset of the next one.
+        const glslang::TType& argType = glslangOperands[i]->getAsTyped()->getType();
+        int memberSize = 0;
+        int matrixStride = 0;
+        int alignment =
+            glslangIntermediate->getMemberAlignment(argType, memberSize, matrixStride, glslang::ElpScalar, false);
+        glslang::RoundToPow2(structMemberOffsets.back(), alignment);
+        structMemberOffsets.push_back(structMemberOffsets.back() + memberSize);
+        // getMemberAlignment's stride is the array stride for an array argument, so ask for
+        // the matrix stride separately - an array of matrices needs the stride of one matrix.
+        structMemberMatrixStrides.push_back(
+            argType.isMatrix() ? getMatrixStride(argType, glslang::ElpScalar, glslang::ElmColumnMajor) : 0);
         glslangOperands[i]->traverse(this);
-        structMemberData.push_back(accessChainLoad(glslangOperands[i]->getAsTyped()->getType()));
-        spv::Id reservedOpType = builder.getTypeId(structMemberData.back());
-        structMemberType.push_back(reservedOpType);
-        structLoadMemberType.push_back(reservedOpType);
+        structMemberData.push_back(accessChainLoad(argType));
+        // Take the explicitly laid out form of the type, not the type of the loaded value.
+        // An aggregate argument carries layout inside itself - ArrayStride on an array, Offset
+        // and MatrixStride on the members of a nested struct - and only the laid out type has
+        // those. createCompositeConstruct below copies the loaded value into it.
+        glslang::TQualifier memberQualifier = argType.getQualifier();
+        memberQualifier.layoutPacking = glslang::ElpScalar;
+        if (memberQualifier.layoutMatrix == glslang::ElmNone)
+            memberQualifier.layoutMatrix = glslang::ElmColumnMajor;
+        structMemberType.push_back(convertGlslangToSpvType(argType, glslang::ElpScalar, memberQualifier, false));
+        structLoadMemberType.push_back(structMemberType.back());
 
         builder.setAccessChain(save);
     }
     structMemberOffsets.pop_back();
     // 4. Construct struct message variable, add abortExt instruction.
     auto structLoadType = builder.makeStructType(structLoadMemberType, {}, "abortMessageLoadType");
-    for (unsigned int i = 0; i < structMemberOffsets.size(); i++)
+    for (unsigned int i = 0; i < structMemberOffsets.size(); i++) {
         builder.addMemberDecoration(structLoadType, i, spv::Decoration::Offset, structMemberOffsets[i]);
-    auto structType = builder.makeStructType(structMemberType, {}, "abortMessage");
-    auto messageVar = builder.createCompositeConstruct(structType, structMemberData);
+        // A matrix in an explicitly laid out struct must state its majorness and stride.
+        // The loaded value is always in GLSL's default column-major order.
+        if (structMemberMatrixStrides[i] != 0) {
+            builder.addMemberDecoration(structLoadType, i, spv::Decoration::ColMajor);
+            builder.addMemberDecoration(structLoadType, i, spv::Decoration::MatrixStride,
+                                        structMemberMatrixStrides[i]);
+        }
+    }
+    // Use the traverser's overload: where a loaded value's type differs from the laid out
+    // member type it copies the value across rather than failing to match.
+    auto messageVar = createCompositeConstruct(structLoadType, structMemberData);
     builder.makeStatementTerminator(spv::Op::OpAbortKHR, {structLoadType, messageVar}, "post-abort");
 }
 
