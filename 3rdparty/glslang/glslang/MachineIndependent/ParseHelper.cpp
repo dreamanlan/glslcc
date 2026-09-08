@@ -4355,7 +4355,7 @@ TFunction* TParseContext::handleConstructorCall(const TSourceLoc& loc, const TPu
     TOperator op = intermediate.mapTypeToConstructorOp(type);
 
     if (op == EOpNull) {
-      if (intermediate.getEnhancedMsgs() && type.getBasicType() == EbtSampler)
+        if (intermediate.getEnhancedMsgs() && type.getBasicType() == EbtSampler)
             error(loc, "function not supported in this version; use texture() instead", "texture*D*", "");
         else
             error(loc, "cannot construct this type", type.getBasicString(), "");
@@ -9612,8 +9612,13 @@ struct AccessChainTraverser : public TIntermTraverser {
 
     bool visitBinary(TVisit, TIntermBinary* binary) override {
         if (binary->getOp() == EOpIndexDirectStruct)
-        {
-            const TTypeList& members = *binary->getLeft()->getType().getStruct();
+        {   
+            const TType* leftType = &binary->getLeft()->getType();
+
+            if (leftType->isReference()) 
+                leftType = leftType->getReferentType();
+
+            const TTypeList& members = *leftType->getStruct();
             const TTypeLoc& member =
                 members[binary->getRight()->getAsConstantUnion()->getConstArray()[0].getIConst()];
             TString memberName = member.type->getFieldName();
