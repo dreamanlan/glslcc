@@ -435,7 +435,7 @@ public:
         if (auto it = debugTypeIdLookup.find(type); it != debugTypeIdLookup.end()) {
             return it->second;
         }
-        
+
         return NoType;
     }
 
@@ -444,7 +444,7 @@ public:
         if (auto it = debugFuncIdLookup.find(func); it != debugFuncIdLookup.end()) {
             return it->second;
         }
-        
+
         return NoResult;
     }
 
@@ -512,6 +512,8 @@ public:
     Id makeDebugValue(Id const debugLocalVariable, Id const value);
     Id makeDebugFunctionType(Id returnType, const std::vector<Id>& paramTypes);
     Id makeDebugFunction(Function* function, Id nameId, Id funcTypeId);
+    Id makeDebugEntryPoint(Function* function, const char* compilerSignature, const char* commandLineArguments,
+                           const char* currentWorkingDirectory = nullptr);
     Id makeDebugLexicalBlock(uint32_t line, uint32_t column);
     std::string unmangleFunctionName(std::string const& name) const;
 
@@ -1397,7 +1399,7 @@ protected:
         inline std::size_t hash_combine(std::size_t seed, std::size_t v) const {
             return hash_mix(seed + 0x9e3779b9 + v);
         }
-        
+
         std::size_t operator()(const ScalarConstantKey& k) const {
             size_t hash1 = hash_combine(std::hash<unsigned>{}(k.typeClass), std::hash<unsigned>{}(k.opcode));
             size_t hash2 = hash_combine(std::hash<Id>{}(k.value1), std::hash<unsigned>{}(k.value2));

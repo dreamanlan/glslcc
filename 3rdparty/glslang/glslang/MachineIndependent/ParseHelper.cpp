@@ -429,12 +429,12 @@ void TParseContext::handlePragma(const TSourceLoc& loc, const TVector<TString>& 
             return;
         }
         if (tokens[2].compare("(") != 0
-            && tokens[4].compare(")") != 0) 
+            && tokens[4].compare(")") != 0)
             error(loc, "Invalid STDGL declaration", "#pragma", "");
         if (tokens[1].compare("invariant") == 0) {
             if(tokens[3].compare("all") != 0)
                 error(loc, "Invalid STDGL invariant declaration:", "#pragma", "'%s' (expected 'all')", tokens[3].c_str());
-        
+
             intermediate.setInvariantAll();
             // Set all builtin out variables invariant if declared
             setInvariant(loc, "gl_Position");
@@ -1565,7 +1565,7 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
                         i == 1) {
                         TStorageQualifier storage = arg->getAsTyped()->getType().getQualifier().storage;
                         if (storage != EvqBuffer && storage != EvqShared) {
-                            error(arguments->getLoc(), "buffer argument must be in buffer or shared storage", 
+                            error(arguments->getLoc(), "buffer argument must be in buffer or shared storage",
                                   fnCandidate->getName().c_str(), "");
                         }
                     }
@@ -2904,6 +2904,63 @@ void TParseContext::memorySemanticsCheck(const TSourceLoc& loc, const TFunction&
     const TIntermTyped* arg0 = (*argp)[0]->getAsTyped();
     const bool isMS = arg0->getBasicType() == EbtSampler && arg0->getType().getSampler().isMultiSample();
 
+    // The Scope, storage-class-semantics and semantics operands must be
+    // compile-time constants. The extraction below reads them as constants, and
+    // SPIR-V generation folds the Scope to a literal, so a non-constant operand
+    // would otherwise deref a null TIntermConstantUnion here and trip an
+    // id/immediate assert in the back end. Locate the first constant operand and
+    // reject anything from there on that is not a compile-time constant.
+    int firstConstArg = -1;
+    switch (callNode.getOp()) {
+    case EOpAtomicAdd:
+    case EOpAtomicSubtract:
+    case EOpAtomicMin:
+    case EOpAtomicMax:
+    case EOpAtomicAnd:
+    case EOpAtomicOr:
+    case EOpAtomicXor:
+    case EOpAtomicExchange:
+    case EOpAtomicStore:
+        firstConstArg = 2;
+        break;
+    case EOpAtomicLoad:
+        firstConstArg = 1;
+        break;
+    case EOpAtomicCompSwap:
+        firstConstArg = 3;
+        break;
+    case EOpImageAtomicAdd:
+    case EOpImageAtomicMin:
+    case EOpImageAtomicMax:
+    case EOpImageAtomicAnd:
+    case EOpImageAtomicOr:
+    case EOpImageAtomicXor:
+    case EOpImageAtomicExchange:
+    case EOpImageAtomicStore:
+        firstConstArg = isMS ? 4 : 3;
+        break;
+    case EOpImageAtomicLoad:
+        firstConstArg = isMS ? 3 : 2;
+        break;
+    case EOpImageAtomicCompSwap:
+        firstConstArg = isMS ? 5 : 4;
+        break;
+    case EOpBarrier:
+    case EOpControlBarrierArriveEXT:
+    case EOpControlBarrierWaitEXT:
+    case EOpMemoryBarrier:
+        firstConstArg = 0;
+        break;
+    default:
+        break;
+    }
+    for (int i = firstConstArg; i >= 0 && i < (int)argp->size(); ++i) {
+        if ((*argp)[i]->getAsConstantUnion() == nullptr) {
+            error(loc, "argument must be a compile-time constant", fnCandidate.getName().c_str(), "");
+            return;
+        }
+    }
+
     // Grab the semantics and storage class semantics from the operands, based on opcode
     switch (callNode.getOp()) {
     case EOpAtomicAdd:
@@ -3484,10 +3541,10 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
             if (f16ShadowCompare)
                 ++arg;
             // Allow non-constant offsets for certain texture ops
-            bool variableOffsetSupport = extensionTurnedOn(E_GL_NV_gpu_shader5) && 
-                (callNode.getOp() == EOpTextureOffset || 
+            bool variableOffsetSupport = extensionTurnedOn(E_GL_NV_gpu_shader5) &&
+                (callNode.getOp() == EOpTextureOffset ||
                  callNode.getOp() == EOpTextureFetchOffset ||
-                 callNode.getOp() == EOpTextureProjOffset || 
+                 callNode.getOp() == EOpTextureProjOffset ||
                  callNode.getOp() == EOpTextureLodOffset ||
                  callNode.getOp() == EOpTextureProjLodOffset);
             if (! (*argp)[arg]->getAsTyped()->getQualifier().isConstant()) {
@@ -3890,7 +3947,7 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
     case EOpEqual:
     case EOpNotEqual:
         if (profile != EEsProfile && version >= 150 && version < 450) {
-            if ((*argp)[1]->getAsTyped()->getBasicType() == EbtInt64 ||                 
+            if ((*argp)[1]->getAsTyped()->getBasicType() == EbtInt64 ||
                 (*argp)[1]->getAsTyped()->getBasicType() == EbtUint64)
                 requireExtensions(loc, 1, &E_GL_NV_gpu_shader5, fnCandidate.getName().c_str());
         }
@@ -4136,6 +4193,27 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
             const TIntermConstantUnion* message = arg0->getAsConstantUnion();
             if (message == nullptr || message->getBasicType() != EbtString || ! message->isLiteral())
                 error(loc, "first argument must be a string literal", fnCandidate.getName().c_str(), "");
+        }
+        // The message string and the remaining arguments are packed into an explicitly laid
+        // out structure type, so every argument has to be something that can be laid out in memory.
+        if (argp != nullptr) {
+            for (int arg = 1; arg < (int)argp->size(); ++arg) {
+                const TIntermTyped* argNode = (*argp)[arg]->getAsTyped();
+                if (argNode == nullptr)
+                    continue;
+                const TType& argType = argNode->getType();
+                if (argType.getBasicType() == EbtString) {
+                    error(loc, "argument cannot be a string, only the message may be a string",
+                          fnCandidate.getName().c_str(), "");
+                } else if (argType.containsOpaque()) {
+                    error(loc, "argument cannot be an opaque type", fnCandidate.getName().c_str(), "");
+                } else if (argType.containsUnsizedArray()) {
+                    error(loc, "argument cannot be a run-time sized array", fnCandidate.getName().c_str(), "");
+                } else if (argType.containsBasicType(EbtBool) && ! argType.isScalar() && ! argType.isVector()) {
+                    error(loc, "argument cannot be an aggregate containing a bool",
+                          fnCandidate.getName().c_str(), "");
+                }
+            }
         }
         break;
     case EOpDebugPrintf:
@@ -5572,7 +5650,7 @@ void TParseContext::globalQualifierTypeCheck(const TSourceLoc& loc, const TQuali
         error(loc, "cannot use interpolation qualifiers with patch", "patch", "");
 
     // Only "patch in" is supported via GL_NV_gpu_shader5
-    if (! symbolTable.atBuiltInLevel() && qualifier.isPatch() && 
+    if (! symbolTable.atBuiltInLevel() && qualifier.isPatch() &&
         (language == EShLangGeometry) && qualifier.storage != EvqVaryingIn &&
         extensionTurnedOn(E_GL_NV_gpu_shader5))
             error(loc, "only 'patch in' is supported in this stage:", "patch", "geometry");
@@ -5596,7 +5674,7 @@ void TParseContext::globalQualifierTypeCheck(const TSourceLoc& loc, const TQuali
             }
             if (publicType.basicType == EbtDouble) {
             	const char* const float64_attrib[] = {E_GL_NV_gpu_shader5, E_GL_ARB_vertex_attrib_64bit};
-                const int Num_float64_attrib = sizeof(float64_attrib) / sizeof(float64_attrib[0]);        
+                const int Num_float64_attrib = sizeof(float64_attrib) / sizeof(float64_attrib[0]);
                 profileRequires(loc, ~EEsProfile, 410, Num_float64_attrib, float64_attrib, "vertex-shader `double` type input");
 			}
             if (qualifier.isAuxiliary() || qualifier.isInterpolation() || qualifier.isMemory() || qualifier.invariant)
@@ -9052,14 +9130,14 @@ const TFunction* TParseContext::findFunction400(const TSourceLoc& loc, const TFu
             return false;
 
         if (extensionTurnedOn(E_GL_NV_gpu_shader5)) {
-            // This map refers to the conversion table mentioned under the 
+            // This map refers to the conversion table mentioned under the
             // section "Modify Section 6.1, Function Definitions, p. 63" in NV_gpu_shader5 spec
             const static std::map<int, std::vector<int>> conversionTable = {
                 {EbtInt8,   {EbtInt, EbtInt64}},
                 {EbtInt16,  {EbtInt, EbtInt64}},
                 {EbtInt,    {EbtInt64}},
-                {EbtUint8,  {EbtUint, EbtUint64}}, 
-                {EbtUint16, {EbtUint, EbtUint64}}, 
+                {EbtUint8,  {EbtUint, EbtUint64}},
+                {EbtUint16, {EbtUint, EbtUint64}},
                 {EbtUint,   {EbtUint64}},
             };
             auto source = conversionTable.find(from.getBasicType());
@@ -9465,7 +9543,7 @@ bool TParseContext::vkRelaxedRemapUniformVariable(const TSourceLoc& loc, TString
     // merge qualifiers
     mergeObjectLayoutQualifiers(updatedBlock->getWritableType().getQualifier(), type.getQualifier(), true);
 
-    // set default value for bank when no decoration is present. 
+    // set default value for bank when no decoration is present.
     if (updatedBlock->getWritableType().getQualifier().isPushConstant() && !updatedBlock->getWritableType().getQualifier().hasBank()) {
         updatedBlock->getWritableType().getQualifier().layoutBank = 0;
     }
@@ -9612,10 +9690,10 @@ struct AccessChainTraverser : public TIntermTraverser {
 
     bool visitBinary(TVisit, TIntermBinary* binary) override {
         if (binary->getOp() == EOpIndexDirectStruct)
-        {   
+        {
             const TType* leftType = &binary->getLeft()->getType();
 
-            if (leftType->isReference()) 
+            if (leftType->isReference())
                 leftType = leftType->getReferentType();
 
             const TTypeList& members = *leftType->getStruct();

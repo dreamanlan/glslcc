@@ -711,6 +711,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.float64.frag",
         "spv.memoryScopeSemantics.comp",
         "spv.memoryScopeSemantics_Error.comp",
+        "spv.memoryScopeSemantics.nonConstArg.comp",
         "spv.splitBarrierMemoryScopeSemantics.comp",
         "spv.splitBarrierArriveMemoryScopeSemantics_Error1.comp",
         "spv.splitBarrierArriveMemoryScopeSemantics_Error2.comp",
@@ -992,6 +993,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.shader.abort.args.ivec.comp",
         "spv.shader.abort.args.uvec.comp",
         "spv.shader.abort.args.vec_mixed.comp",
+        "spv.shader.abort.args.bool.comp",
         "spv.shader.abort.args.scalar_layout.comp",
         "spv.shader.abort.type.int8.comp",
         "spv.shader.abort.type.int16.comp",
@@ -1003,6 +1005,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.shader.abort.type.struct.comp",
         "spv.shader.abort.type.buffer_reference.comp",
         "spv.shader.abort.format_Error.comp",
+        "spv.shader.abort.args.type_Error.comp",
     })),
     FileNameAsCustomTestSuffix
 );
