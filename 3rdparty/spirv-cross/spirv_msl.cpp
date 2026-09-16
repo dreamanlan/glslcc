@@ -1793,6 +1793,7 @@ string CompilerMSL::compile()
 	// Do output first to ensure out. is declared at top of entry function.
 	qual_pos_var_name = "";
 	qual_viewport_idx_var_name = "";
+	qual_frag_depth_var_name = "";
 	if (is_mesh_shader())
 	{
 		fixup_implicit_builtin_block_names(get_execution_model());
@@ -2989,6 +2990,8 @@ void CompilerMSL::add_plain_variable_to_interface_block(StorageClass storage, co
 			qual_pos_var_name = qual_var_name;
 		if (builtin == BuiltInViewportIndex && storage == StorageClassOutput)
 			qual_viewport_idx_var_name = qual_var_name;
+		if (builtin == BuiltInFragDepth && storage == StorageClassOutput)
+			qual_frag_depth_var_name = qual_var_name;
 	}
 
 	// Copy interpolation decorations if needed
@@ -3619,6 +3622,8 @@ void CompilerMSL::add_plain_member_variable_to_interface_block(StorageClass stor
 			qual_pos_var_name = qual_var_name;
 		if (builtin == BuiltInViewportIndex && storage == StorageClassOutput)
 			qual_viewport_idx_var_name = qual_var_name;
+		if (builtin == BuiltInFragDepth && storage == StorageClassOutput)
+			qual_frag_depth_var_name = qual_var_name;
 	}
 
 	const SPIRConstant *c = nullptr;
@@ -5127,6 +5132,36 @@ void CompilerMSL::align_struct(SPIRType &ib_type, unordered_set<uint32_t> &align
 		// offsets, array strides and matrix strides.
 		ensure_member_packing_rules_msl(ib_type, mbr_idx);
 
+		// Arrays of structs: the element struct may just have been packed (by its own align_struct pass above)
+		// to a size smaller than the declared ArrayStride. mark_scalar_layout_structs() runs before that packing
+		// and only sees the unpacked size, so it can miss this case. MSL cannot express an array stride larger
+		// than sizeof(T); route such arrays through spvPaddedArrayElement exactly like that pass does.
+		{
+			auto &mbr_type = get<SPIRType>(ib_type.member_types[mbr_idx]);
+			if (mbr_type.basetype == SPIRType::Struct && !mbr_type.array.empty() &&
+			    !(mbr_type.pointer && mbr_type.storage == StorageClassPhysicalStorageBuffer))
+			{
+				auto *struct_type = &mbr_type;
+				while (!struct_type->array.empty())
+					struct_type = &get<SPIRType>(struct_type->parent_type);
+
+				if (!has_decoration(struct_type->self, DecorationArrayStride))
+				{
+					uint32_t array_stride = type_struct_member_array_stride(ib_type, mbr_idx);
+					uint32_t dimensions = uint32_t(mbr_type.array.size() - 1);
+					for (uint32_t dim = 0; dim < dimensions; dim++)
+						array_stride /= max<uint32_t>(to_array_size_literal(mbr_type, dim), 1u);
+
+					uint32_t msl_size = get_declared_struct_size_msl(*struct_type);
+					if (array_stride > msl_size)
+					{
+						set_decoration(struct_type->self, DecorationArrayStride, msl_size);
+						add_spv_func_and_recompile(SPVFuncImplPaddedArrayElement);
+					}
+				}
+			}
+		}
+
 		// Align current offset to the current member's default alignment. If the member was packed, it will observe
 		// the updated alignment here.
 		uint32_t msl_align_mask = get_declared_struct_member_alignment_msl(ib_type, mbr_idx) - 1;
@@ -5134,6 +5169,12 @@ void CompilerMSL::align_struct(SPIRType &ib_type, unordered_set<uint32_t> &align
 
 		// Fetch the member offset as declared in the SPIRV.
 		uint32_t spirv_mbr_offset = get_member_decoration(ib_type_id, mbr_idx, DecorationOffset);
+
+		// A previous compilation pass may have recorded a padding target that no longer applies
+		// (e.g. a struct array that is now emitted with spvPaddedArrayElement and therefore
+		// already spans its full ArrayStride). Recompute it from scratch on every pass.
+		unset_extended_member_decoration(ib_type_id, mbr_idx, SPIRVCrossDecorationPaddingTarget);
+
 		if (spirv_mbr_offset > aligned_msl_offset)
 		{
 			// Since MSL and SPIR-V have slightly different struct member alignment and
@@ -8472,6 +8513,17 @@ void CompilerMSL::emit_resources()
 // Emit declarations for the specialization Metal function constants
 void CompilerMSL::emit_specialization_constants_and_structs()
 {
+	if (needs_depth_clip_state_buffer())
+	{
+		statement("struct spvDepthClipState");
+		begin_scope();
+		statement("uint emulateViewportZ;");
+		statement("uint emulateDepthClamp;");
+		statement("float2 viewportDepthRanges[16];");
+		end_scope_decl();
+		statement("");
+	}
+
 	SpecializationConstant wg_x, wg_y, wg_z;
 	ID workgroup_size_id = get_work_group_size_specialization_constants(wg_x, wg_y, wg_z);
 	if (workgroup_size_id == 0 && is_mesh_shader())
@@ -13604,6 +13656,23 @@ void CompilerMSL::emit_fixup()
 
 		if (is_vertex_like_shader() && !qual_pos_var_name.empty())
 		{
+			if (options.vertex.fixup_clipspace)
+				statement(qual_pos_var_name, ".z = (", qual_pos_var_name, ".z + ", qual_pos_var_name,
+				          ".w) * 0.5;       // Adjust clip-space for Metal");
+
+			if (msl_options.emulate_depth_clip_enable)
+			{
+				string viewport_idx =
+				    qual_viewport_idx_var_name.empty() ? "0" : join("uint(", qual_viewport_idx_var_name, ")");
+				statement("if (spvDepthClipState.emulateViewportZ != 0u)");
+				begin_scope();
+				statement("float2 spvViewportDepthRange = spvDepthClipState.viewportDepthRanges[", viewport_idx, "];");
+				statement(qual_pos_var_name, ".z = ", qual_pos_var_name,
+				          ".z * (spvViewportDepthRange.y - spvViewportDepthRange.x) + ", qual_pos_var_name,
+				          ".w * spvViewportDepthRange.x;    // Emulate viewport Z transform");
+				end_scope();
+			}
+
 			if (msl_options.emulate_reversed_depth_viewport)
 			{
 				if (qual_viewport_idx_var_name.empty())
@@ -13618,12 +13687,19 @@ void CompilerMSL::emit_fixup()
 				end_scope();
 			}
 
-			if (options.vertex.fixup_clipspace)
-				statement(qual_pos_var_name, ".z = (", qual_pos_var_name, ".z + ", qual_pos_var_name,
-						  ".w) * 0.5;       // Adjust clip-space for Metal");
-
 			if (options.vertex.flip_vert_y)
 				statement(qual_pos_var_name, ".y = -(", qual_pos_var_name, ".y);", "    // Invert Y-axis for Metal");
+		}
+		else if (get_execution_model() == ExecutionModelFragment && !qual_frag_depth_var_name.empty() &&
+		         msl_options.emulate_depth_clip_enable)
+		{
+			string viewport_idx = depth_clip_viewport_idx_var_name.empty() ? "0" : depth_clip_viewport_idx_var_name;
+			statement("if (spvDepthClipState.emulateDepthClamp != 0u)");
+			begin_scope();
+			statement("float2 spvViewportDepthRange = spvDepthClipState.viewportDepthRanges[", viewport_idx, "];");
+			statement(qual_frag_depth_var_name, " = clamp(", qual_frag_depth_var_name,
+			          ", spvViewportDepthRange.x, spvViewportDepthRange.y);");
+			end_scope();
 		}
 	}
 }
@@ -14782,6 +14858,8 @@ bool CompilerMSL::is_intersection_query() const
 
 void CompilerMSL::entry_point_args_builtin(string &ep_args)
 {
+	depth_clip_viewport_idx_var_name = "";
+
 	// Builtin variables
 	SmallVector<pair<SPIRVariable *, BuiltIn>, 8> active_builtins;
 	ir.for_each_typed_id<SPIRVariable>([&](uint32_t var_id, SPIRVariable &var) {
@@ -14806,6 +14884,9 @@ void CompilerMSL::entry_point_args_builtin(string &ep_args)
 
 			if (is_direct_input_builtin(bi_type))
 			{
+				if (bi_type == BuiltInViewportIndex)
+					depth_clip_viewport_idx_var_name = to_expression(var_id);
+
 				if (!ep_args.empty())
 					ep_args += ", ";
 
@@ -14869,6 +14950,23 @@ void CompilerMSL::entry_point_args_builtin(string &ep_args)
 
 	if (needs_base_instance_arg == TriState::Yes)
 		ep_args += built_in_func_arg(BuiltInBaseInstance, !ep_args.empty());
+
+	if (needs_depth_clip_state_buffer())
+	{
+		if (get_execution_model() == ExecutionModelFragment && msl_options.supports_msl_version(2, 0) &&
+		    depth_clip_viewport_idx_var_name.empty())
+		{
+			if (!ep_args.empty())
+				ep_args += ", ";
+			depth_clip_viewport_idx_var_name = "spvDepthClipViewportIndex";
+			ep_args += "uint spvDepthClipViewportIndex [[viewport_array_index]]";
+		}
+
+		if (!ep_args.empty())
+			ep_args += ", ";
+		ep_args += join("constant spvDepthClipState& spvDepthClipState [[buffer(",
+		                msl_options.depth_clip_state_buffer_index, ")]]");
+	}
 
 	if (msl_options.emulate_reversed_depth_viewport && stage_out_var_id && !capture_output_to_buffer &&
 	    is_vertex_like_shader() && !qual_pos_var_name.empty())
