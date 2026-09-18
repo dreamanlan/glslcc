@@ -6452,7 +6452,9 @@ TSymbol* TParseContext::redeclareBuiltinVariable(const TSourceLoc& loc, const TS
     bool nonEsRedecls = (!isEsProfile() && (version >= 130 || identifier == "gl_TexCoord"));
     bool    esRedecls = (isEsProfile() &&
                          (version >= 320 || extensionsTurnedOn(Num_AEP_shader_io_blocks, AEP_shader_io_blocks) ||
-                          (identifier == "gl_FragDepth" && extensionTurnedOn(E_GL_EXT_conservative_depth))));
+                          (identifier == "gl_FragDepth" && extensionTurnedOn(E_GL_EXT_conservative_depth)) ||
+                          ((identifier == "gl_ClipDistance" || identifier == "gl_CullDistance") &&
+                           extensionTurnedOn(E_GL_EXT_clip_cull_distance))));
     if (! esRedecls && ! nonEsRedecls)
         return nullptr;
 
@@ -6745,7 +6747,7 @@ void TParseContext::redeclareBuiltinBlock(const TSourceLoc& loc, TTypeList& newT
             else if (! oldType.getQualifier().isPerView() && ! oldType.sameArrayness(newType) && oldType.isSizedArray())
                 error(memberLoc, "cannot change array size of redeclared block member", member->type->getFieldName().c_str(), "");
             else if (! oldType.getQualifier().isPerView() && newType.isArray())
-                arrayLimitCheck(loc, member->type->getFieldName(), newType.getOuterArraySize());
+                arrayLimitCheck(memberLoc, member->type->getFieldName(), newType.getOuterArraySize());
             if (oldType.getQualifier().isPerView() && ! newType.getQualifier().isPerView())
                 error(memberLoc, "missing perviewNV qualifier to redeclared block member", member->type->getFieldName().c_str(), "");
             else if (! oldType.getQualifier().isPerView() && newType.getQualifier().isPerView())
@@ -6804,10 +6806,13 @@ void TParseContext::redeclareBuiltinBlock(const TSourceLoc& loc, TTypeList& newT
         } else {
             // For missing members of anonymous blocks that have been redeclared,
             // hide the original (shared) declaration.
-            // Instance-named blocks can just have the member removed.
-            if (instanceName)
+            // Instance-named blocks can just have the member removed, along with its
+            // extension list, so later members keep their own extension checks.
+            if (instanceName) {
+                block->getAsVariable()->eraseMemberExtensions(
+                    static_cast<int>(member - type.getWritableStruct()->begin()));
                 member = type.getWritableStruct()->erase(member);
-            else {
+            } else {
                 member->type->hideMember();
                 ++member;
             }
