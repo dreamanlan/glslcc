@@ -5981,7 +5981,11 @@ void TParseContext::precisionQualifierCheck(const TSourceLoc& loc, TBasicType ba
 
 void TParseContext::parameterTypeCheck(const TSourceLoc& loc, TStorageQualifier qualifier, const TType& type)
 {
-    if ((qualifier == EvqOut || qualifier == EvqInOut) && type.isOpaque() && !intermediate.getBindlessMode())
+    // getBindlessMode() is only set once a bindless construct has been parsed, so it is
+    // still false for a function declared above the first one. Ask the extension instead.
+    const bool bindlessHandle =
+        type.getBasicType() == EbtSampler && intermediate.IsRequestedExtension(E_GL_ARB_bindless_texture);
+    if ((qualifier == EvqOut || qualifier == EvqInOut) && type.isOpaque() && !bindlessHandle)
         error(loc, "samplers and atomic_uints cannot be output parameters", type.getBasicTypeString().c_str(), "");
     if (!parsingBuiltins && type.contains16BitFloat())
         requireFloat16Arithmetic(loc, type.getBasicTypeString().c_str(), "float16 types can only be in uniform block or buffer storage");
@@ -8126,6 +8130,19 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
     }
 
     error(loc, "there is no such layout identifier for this stage taking an assigned value", id.c_str(), "");
+}
+
+// https://github.com/KhronosGroup/glslang/issues/4444
+void TParseContext::checkRepeatedLocalSize(const TSourceLoc& loc, const TShaderQualifiers& dst, const TShaderQualifiers& src)
+{
+    static const char* const localSizeNames[3] = { "local_size_x", "local_size_y", "local_size_z" };
+    static const char* const localSizeIdNames[3] = { "local_size_x_id", "local_size_y_id", "local_size_z_id" };
+    for (int i = 0; i < 3; ++i) {
+        if (dst.localSizeNotDefault[i] && src.localSizeNotDefault[i])
+            warn(loc, "repeated layout qualifier, only the last occurrence is used", localSizeNames[i], "");
+        if (dst.localSizeSpecId[i] != TQualifier::layoutNotSet && src.localSizeSpecId[i] != TQualifier::layoutNotSet)
+            warn(loc, "repeated layout qualifier, only the last occurrence is used", localSizeIdNames[i], "");
+    }
 }
 
 // Merge any layout qualifier information from src into dst, leaving everything else in dst alone
@@ -10328,6 +10345,10 @@ TIntermNode* TParseContext::executeInitializer(const TSourceLoc& loc, TIntermTyp
             variable->setConstArray(initializer->getAsConstantUnion()->getConstArray());
         else {
             // It's a specialization constant.
+            // Computed from other spec constants, so it becomes an OpSpecConstantOp, which cannot carry SpecId.
+            if (variable->getType().getQualifier().hasSpecConstantId())
+                error(loc, "cannot be applied to a constant computed from other specialization constants",
+                      "constant_id", "");
             variable->getWritableType().getQualifier().makeSpecConstant();
 
             // Keep the subtree that computes the specialization constant with the variable.
@@ -10637,13 +10658,10 @@ TIntermTyped* TParseContext::constructBuiltIn(const TType& type, TOperator op, T
             return newNode;
         } else if (node->getType().getBasicType() == EbtSampler) {
             requireExtensions(loc, 1, &E_GL_ARB_bindless_texture, "sampler conversion to uvec2");
-            // force the basic type of the constructor param to uvec2, otherwise spv builder will
-            // report some errors
-            TIntermTyped* newSrcNode = intermediate.createConversion(EbtUint, node);
-            newSrcNode->getAsTyped()->getWritableType().setVectorSize(2);
-
+            // createConversion has no sampler-to-uint op and returns null, so unpack the
+            // handle directly, mirroring the uvec2-to-handle direction below.
             TIntermTyped* newNode =
-                intermediate.addBuiltInFunctionCall(node->getLoc(), EOpConstructUVec2, false, newSrcNode, type);
+                intermediate.addBuiltInFunctionCall(node->getLoc(), EOpUnpackUint2x32, true, node, type);
             return newNode;
         }
         [[fallthrough]];
