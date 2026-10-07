@@ -1842,6 +1842,8 @@ TGlslangToSpvTraverser::TGlslangToSpvTraverser(unsigned int spvVersion,
         const std::map<std::string, std::string>& include_txt = glslangIntermediate->getIncludeText();
         for (auto iItr = include_txt.begin(); iItr != include_txt.end(); ++iItr)
             builder.addInclude(iItr->first, iItr->second);
+    } else if (this->options.emitSourceFileName) {
+        builder.setEmitSourceFileName(glslangIntermediate->getSourceFile());
     }
 
     builder.setUseReplicatedComposites(glslangIntermediate->usingReplicatedComposites());
@@ -6468,7 +6470,8 @@ bool TGlslangToSpvTraverser::filterMember(const glslang::TType& member)
     }
 
     if (glslangIntermediate->getStage() != EShLangMesh) {
-        if (member.getFieldName() == "gl_ViewportMask" &&
+        if ((member.getFieldName() == "gl_ViewportMask" || member.getFieldName() == "gl_ViewportIndex" ||
+             member.getFieldName() == "gl_Layer") &&
             extensions.find("GL_NV_viewport_array2") == extensions.end())
             return true;
         if (member.getFieldName() == "gl_PositionPerViewNV" &&
