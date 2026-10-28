@@ -1019,7 +1019,13 @@ std::string CompilerHLSL::to_semantic(uint32_t location, ExecutionModel em, Stor
 				return attribute.semantic;
 	}
 
-	// Not a vertex attribute, or no remap_vertex_attributes entry.
+	if (em == ExecutionModelFragment && sc == StorageClassOutput)
+	{
+		bool legacy = hlsl_options.shader_model <= 30;
+		return join(legacy ? "COLOR" : "SV_Target", location);
+	}
+
+	// Not a vertex attribute, fragment output or no remap_vertex_attributes entry.
 	return join("TEXCOORD", location);
 }
 
@@ -1882,7 +1888,10 @@ void CompilerHLSL::emit_resources()
 	input_builtins.clear(BuiltInSubgroupGtMask);
 	input_builtins.clear(BuiltInSubgroupGeMask);
 
-	if (!input_variables.empty() || !input_builtins.empty())
+	// A geometry shader's signature always takes the input array, even when the shader reads no input.
+	bool is_geometry = get_entry_point().model == ExecutionModelGeometry;
+
+	if (!input_variables.empty() || !input_builtins.empty() || is_geometry)
 	{
 		require_input = true;
 		statement("struct SPIRV_Cross_Input");
@@ -5434,6 +5443,20 @@ void CompilerHLSL::write_access_chain(const SPIRAccessChain &chain, uint32_t val
 void CompilerHLSL::emit_store(const Instruction &instruction)
 {
 	auto ops = stream(instruction);
+
+	// PointSize is not part of the mesh output struct, so with point_size_compat,
+	// ignore writes to it like we do for other stages.
+	if (get_execution_model() == ExecutionModelMeshEXT && hlsl_options.point_size_compat)
+	{
+		auto *var = maybe_get_backing_variable(ops[0]);
+		bool is_point_size =
+		    (has_decoration(ops[0], DecorationBuiltIn) && get_decoration(ops[0], DecorationBuiltIn) == BuiltInPointSize) ||
+		    (var && has_decoration(var->self, DecorationBuiltIn) &&
+		     get_decoration(var->self, DecorationBuiltIn) == BuiltInPointSize);
+		if (is_point_size)
+			return;
+	}
+
 	if (options.vertex.flip_vert_y)
 	{
 		auto *expr = maybe_get<SPIRExpression>(ops[0]);
@@ -5662,7 +5685,8 @@ void CompilerHLSL::emit_atomic(const uint32_t *ops, uint32_t length, Op op)
 		forced_temporaries.insert(ops[1]);
 
 		auto &type = get<SPIRType>(result_type);
-		statement(variable_decl(type, to_name(id)), ";");
+		// Not a plain declaration: the temporary may be hoisted, e.g. when a loop's continue block reads it.
+		emit_uninitialized_temporary(result_type, id);
 
 		auto &data_type = expression_type(ops[2]);
 		auto *chain = maybe_get<SPIRAccessChain>(ops[2]);
@@ -5679,6 +5703,18 @@ void CompilerHLSL::emit_atomic(const uint32_t *ops, uint32_t length, Op op)
 			if (has_decoration(chain->self, DecorationNonUniform))
 				convert_non_uniform_expression(base, chain->self);
 			expr_type = SPIRType::UInt;
+
+			// Its min / max are signed or unsigned by the type of the value, not by the opcode.
+			bool is_signed_op = op == OpAtomicSMin || op == OpAtomicSMax;
+			if (is_signed_op || op == OpAtomicUMin || op == OpAtomicUMax)
+			{
+				auto value_type = expression_type(ops[5]).basetype;
+				if (is_signed_op && value_type == SPIRType::UInt)
+					value_expr = join("asint(", value_expr, ")");
+				else if (!is_signed_op && value_type == SPIRType::Int)
+					value_expr = join("asuint(", value_expr, ")");
+			}
+
 			statement(base, ".", atomic_op, "(", chain->dynamic_index, chain->static_index, ", ", value_expr,
 			          ", ", to_name(id), ");");
 		}
@@ -6737,10 +6773,21 @@ void CompilerHLSL::emit_instruction(const Instruction &instruction)
 
 		// This must be 32-bit uint, so we're good to go.
 		emit_uninitialized_temporary_expression(ops[0], ops[1]);
-		statement(to_non_uniform_aware_expression(ops[2]), ".GetDimensions(", to_expression(ops[1]), ");");
-		uint32_t offset = type_struct_member_offset(type, ops[3]);
-		uint32_t stride = type_struct_member_array_stride(type, ops[3]);
-		statement(to_expression(ops[1]), " = (", to_expression(ops[1]), " - ", offset, ") / ", stride, ";");
+		if (is_user_type_structured(var->self))
+		{
+			// A structured buffer returns its element count, along with a stride we don't need.
+			auto stride_name = get_unique_identifier();
+			statement("uint ", stride_name, ";");
+			statement(to_non_uniform_aware_expression(ops[2]), ".GetDimensions(", to_expression(ops[1]), ", ",
+			          stride_name, ");");
+		}
+		else
+		{
+			statement(to_non_uniform_aware_expression(ops[2]), ".GetDimensions(", to_expression(ops[1]), ");");
+			uint32_t offset = type_struct_member_offset(type, ops[3]);
+			uint32_t stride = type_struct_member_array_stride(type, ops[3]);
+			statement(to_expression(ops[1]), " = (", to_expression(ops[1]), " - ", offset, ") / ", stride, ";");
+		}
 		break;
 	}
 

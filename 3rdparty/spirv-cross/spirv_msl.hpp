@@ -1007,6 +1007,9 @@ protected:
 	bool is_tesc_shader() const;
 	bool is_tese_shader() const;
 	bool is_mesh_shader() const;
+	bool is_mesh_output_with_default(BuiltIn builtin, StorageClass storage) const;
+	bool is_64bit_integer_interface(const SPIRType &type) const;
+	std::string interface_word_swizzle(const SPIRType &type, uint32_t index);
 
 	void preprocess_op_codes();
 	void localize_global_variables();
@@ -1079,6 +1082,7 @@ protected:
 
 	void emit_custom_templates();
 	void emit_custom_functions();
+	void emit_precise_helper_begin(const char *signature);
 	void emit_resources();
 	void emit_specialization_constants_and_structs();
 	void emit_interface_block(uint32_t ib_var_id);
@@ -1377,6 +1381,7 @@ protected:
 
 	void emit_argument_buffer_aliased_descriptor(const SPIRVariable &aliased_var,
 	                                             const SPIRVariable &base_var);
+	void emit_argument_buffer_aliased_sampler(const SPIRVariable &aliased_var, const SPIRVariable &base_var);
 
 	void analyze_argument_buffers();
 	bool descriptor_set_is_argument_buffer(uint32_t desc_set) const;
