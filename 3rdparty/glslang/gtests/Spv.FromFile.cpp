@@ -91,6 +91,23 @@ using GlslNonSemanticShaderDebugInfoTest = GlslangTest<::testing::TestWithParam<
 using GlslNonSemanticShaderDebugInfoVulkanLatestTest = GlslangTest<::testing::TestWithParam<std::string>>;
 using GlslSplitBarrierEXTTest = GlslangTest<::testing::TestWithParam<std::string>>;
 
+#if ENABLE_OPT
+using CooperativeMatrixSelection = GlslangTest<::testing::TestWithParam<std::string>>;
+
+TEST_P(CooperativeMatrixSelection, FromFile)
+{
+    options().optimizeSize = true;
+    options().validate = false;
+    loadFileCompileAndCheck(GlobalTestSettings.testRoot, GetParam(), Source::GLSL, Semantics::Vulkan,
+                            glslang::EShTargetVulkan_1_1, glslang::EShTargetSpv_1_4, Target::Spv, true, "",
+                            "/baseResults/", true);
+}
+
+INSTANTIATE_TEST_SUITE_P(CooperativeMatrix, CooperativeMatrixSelection,
+                         ::testing::Values("spv.coopmatKHR_select.comp"),
+                         FileNameAsCustomTestSuffix);
+#endif
+
 // Compiling GLSL to SPIR-V under Vulkan semantics. Expected to successfully
 // generate SPIR-V.
 TEST_P(CompileVulkanToSpirvTest, FromFile)
@@ -362,6 +379,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.16bitstorage_Error-int.frag",
         "spv.16bitstorage-uint.frag",
         "spv.16bitstorage_Error-uint.frag",
+        "spv.16bitstorage-constructors.frag",
         "spv.300BuiltIns.vert",
         "spv.300layout.frag",
         "spv.300layout.vert",
@@ -390,7 +408,9 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.8bitstorage_Error-uint.frag",
         "spv.8bitstorage-ubo.vert",
         "spv.8bitstorage-ssbo.vert",
+        "spv.8bitstorage-constructors.frag",
         "spv.8bit-16bit-construction.frag",
+        "spv.8bit-16bit-int-construction.frag",
         "spv.accessChain.frag",
         "spv.aggOps.frag",
         "spv.always-discard.frag",
